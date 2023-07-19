@@ -19,6 +19,8 @@ int AccessRights::InitializationRights()
 		src_data_file >> source_data;
 
 	// Расшифровываем содержимое
+	if (source_data.empty())
+		return 0;
 	source_data = crypt.DecryptData(source_data, internal_key);
 
 	// Парсим расшифрованную строку
@@ -54,7 +56,6 @@ int AccessRights::InitializationRights()
 	return 0;
 }
 
-
 bool AccessRights::CheckRights(User _user, Note _note)
 {
 	auto finded_value = find_if(access_table_.begin(), access_table_.end(), [&](auto curr) {
@@ -62,7 +63,6 @@ bool AccessRights::CheckRights(User _user, Note _note)
 		});
 	return finded_value == access_table_.end() ? false : true;
 }
-
 
 bool AccessRights::SetRights(User _user, Note _note)
 {
@@ -91,4 +91,12 @@ int AccessRights::SaveAllNotes()
 	src_data_file.close();
 
 	return 0;
+}
+
+bool AccessRights::CheckUser(const User user)
+{
+	auto found_record = find_if(users_table_.begin(), users_table_.end(), [&](auto fnd) {
+		return fnd.login_ == user.login_;
+		});
+	if (found_record == )
 }

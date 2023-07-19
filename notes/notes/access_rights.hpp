@@ -35,7 +35,9 @@ public:
 class Note
 {
 public:
-	Note() {};
+	Note() { 
+		type_ = kShared;
+	};
 
 	string name_, path_, owner_name_, data_;
 	int type_;
@@ -46,6 +48,7 @@ class AccessRights
 {
 public:
 	AccessRights() {
+		// Внутренний ключ для шифрования файла с данными
 		internal_key = "ipbdfaisbfasbfih1u43p459@(&hbdf@hdbvfufbyu";
 	};
 
@@ -54,8 +57,10 @@ private:
 	bool CheckRights(User user, Note _note);
 	bool SetRights(User _user, Note _note);
 	int SaveAllNotes();
+	bool CheckUser(const User user);
 
 	
 	set<Note> access_table_;
+	set<User> users_table_;
 	string internal_key;
 };
