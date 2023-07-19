@@ -3,6 +3,7 @@
 
 AccessRights::AccessRights()
 {
+	internal_key = "ipPDdFa2365#bfAdFbfBih1u43p459@(&hbdf@hApCSbyu";
 	InitializationRights();
 }
 
@@ -91,6 +92,8 @@ int AccessRights::SaveAllData()
 	// Конвертируем в строку и передаем шифровщику
 	json_data = source_json.dump();
 	crypt.EncryptFile(ACCESS_RIGHTS_FILE_PATH, json_data, internal_key);
+
+	return 0;
 }
 
 bool AccessRights::CheckUser(const User user)

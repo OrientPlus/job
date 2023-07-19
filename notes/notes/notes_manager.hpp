@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <mutex>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
@@ -19,20 +20,24 @@
 
 using std::string;
 using std::vector;
+using std::lock_guard;
+using std::mutex;
 
 
 class NotesManager
 {
 public:
     int run();
+    //int ExecuteCommand();
 
 private:
     int StartServer();
     int StopServer();
-    int ExecuteCommand();
     int SendData(SOCKET socket, string data);
     int RecvData(SOCKET socket, string data);
 
+    static VOID CALLBACK ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
+    int ExecuteCommand();
     int CreateNote(string name);
     int DeleteNote(string name);
     int EditNote(string name);
@@ -45,6 +50,8 @@ private:
 
     AccessRights access_rights_;
     Cryptographer crypt_;
+
+    static mutex mt_;
 
     // Поля многопотока
     PTP_POOL pool_;

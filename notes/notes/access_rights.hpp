@@ -9,7 +9,6 @@
 #include <sstream>
 
 #include <nlohmann/json.hpp>
-
 #include "cryptographer.hpp"
 
 
@@ -34,6 +33,20 @@ class User
 public:
 	User() {};
 
+	bool operator<(const User &other) const
+	{
+		return login_ < other.login_;
+	}
+
+	bool operator==(const User &other) const
+	{
+		return login_ == other.login_ and password_ == other.password_;
+	}
+
+	bool operator>(const User& other) const
+	{
+		return login_ > other.login_;
+	}
 	string login_, password_;
 };
 
@@ -47,16 +60,28 @@ public:
 
 	string name_, path_, owner_name_, data_;
 	int type_;
+
+	bool operator<(const Note& other) const
+	{
+		return data_.size() < other.data_.size();
+	}
+
+	bool operator==(const Note& other) const 
+	{
+		return name_ == other.name_;
+	}
+
+	bool operator>(const Note& other) const
+	{
+		return data_.size() > other.data_.size();
+	}
 };
 
 
 class AccessRights
 {
 public:
-	AccessRights() {
-		// Внутренний ключ для шифрования файла с данными
-		internal_key = "ipbdfaisbfasbfih1u43p459@(&hbdf@hdbvfufbyu";
-	};
+	AccessRights();
 
 private:
 	int InitializationRights();

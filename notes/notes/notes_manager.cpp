@@ -86,13 +86,6 @@ int NotesManager::RecvData(SOCKET socket, string data)
     return bytesReceived;
 }
 
-VOID CALLBACK threadStart(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work)
-{
-    NotesManager* ptr = reinterpret_cast<NotesManager*>(Parameter);
-
-    ptr->ExecuteCommand();
-}
-
 int NotesManager::run()
 {
     HANDLE threadHandle;
@@ -113,7 +106,7 @@ int NotesManager::run()
     cleanupgroup_ = CreateThreadpoolCleanupGroup();
     SetThreadpoolCallbackCleanupGroup(&call_back_environ_, cleanupgroup_, NULL);
 
-    workcallback_ = threadStart;
+    workcallback_ = ThreadStarter;
     work_ = CreateThreadpoolWork(workcallback_, this, &call_back_environ_);
 
     // В цикле устанавливаем соединения с клиентами и выделяем их в новый поток
@@ -133,6 +126,13 @@ int NotesManager::run()
         // Выполняем работу в потоке
         SubmitThreadpoolWork(work_);
     }
+}
+
+VOID NotesManager::ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work)
+{
+    NotesManager* ptr = reinterpret_cast<NotesManager*>(Parameter);
+    
+    ptr->ExecuteCommand();
 }
 
 int NotesManager::ExecuteCommand()
@@ -176,7 +176,9 @@ bool NotesManager::IdentificationClient(User &user, SOCKET user_socket)
     user.login_ = decrypted_text.substr(0, decrypted_text.find(' '));
     user.password_ = decrypted_text.substr(decrypted_text.find(' ') + 1);
 
-    auto fnd = access.checkUser(curUser);
+
+
+    /*auto fnd = access.checkUser(curUser);
     if (!fnd.first)
     {
         sendData("Такой пользователь уже авторизован!", client);
@@ -228,7 +230,7 @@ bool NotesManager::IdentificationClient(User &user, SOCKET user_socket)
 
     curUser.keyFl = curUser.cryptProvFl = curUser.hashFl = true;
 
-    sendData("Authorization is successful!", client);
+    sendData("Authorization is successful!", client);*/
 
     return 0;
     return false;

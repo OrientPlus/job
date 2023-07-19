@@ -27,7 +27,7 @@ using std::cin;
 class Cryptographer
 {
 public:
-
+	Cryptographer();
     // Симметричное шифрование
 	string EncryptData(string data, const string kKey);
 	string DecryptData(string data, const string kKey);
