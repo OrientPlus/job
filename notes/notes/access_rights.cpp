@@ -6,53 +6,42 @@ AccessRights::AccessRights()
 	InitializationRights();
 }
 
+
 int AccessRights::InitializationRights()
 {
+	// Дешифруем данные из json, передаем в json объект
 	Cryptographer crypt;
-	string source_data;
-
-	fstream src_data_file;
-	src_data_file.open(ACCESS_RIGHTS_FILE_PATH);
-
-	// Читаем содержимое файла в строку
-	while (!src_data_file.eof())
-		src_data_file >> source_data;
-
-	// Расшифровываем содержимое
-	if (source_data.empty())
-		return 0;
-	source_data = crypt.DecryptData(source_data, internal_key);
-
-	// Парсим расшифрованную строку
-	stringstream ss(source_data);
-	string word;
-	Note tmp_note;
-	while (ss >> word)
+	string json_data;
+	json_data = crypt.DecryptFile(ACCESS_RIGHTS_FILE_PATH, internal_key);
+	json source_json;
+	source_json = json::parse(json_data);
+	// Заполняем поля из json объекта
+	Note temp_note;
+	for (const auto& [key, value] : source_json.items())
 	{
-		// Имя Путь Тип Владелец Содержимое
-		tmp_note.name_ = word;
-		
-		ss >> word;
-		tmp_note.path_ = word;
+		temp_note.name_ = key;
+		temp_note.type_ = value["type"];
+		temp_note.owner_name_ = value["owner"];
+		temp_note.data_ = value["data"];
+		temp_note.path_ = value["path"];
 
-		ss >> word;
-		tmp_note.type_ = std::stoi(word, nullptr, 10);
-
-		ss >> word;
-		tmp_note.owner_name_ = word;
-
-		string note_data;
-		while (word != "~!")
-		{
-			ss >> word;
-			note_data += word;
-		}
-		tmp_note.data_ = note_data;
-
-		access_table_.insert(tmp_note);
+		access_table_.insert(temp_note);
 	}
 
-	src_data_file.close();
+	// Дешифруем данные из json, передаем в json объект
+	json_data.clear();
+	json_data = crypt.DecryptFile(USERS_DATA_FILE_PATH, internal_key);
+	source_json = json::parse(json_data);
+	// Заполняем поля из json объекта
+	User temp_user;
+	for (const auto& [key, value] : source_json.items())
+	{
+		temp_user.login_ = key;
+		temp_user.password_ = value["password"];
+
+		users_table_.insert(temp_user);
+	}
+	
 	return 0;
 }
 
@@ -69,28 +58,39 @@ bool AccessRights::SetRights(User _user, Note _note)
 	return access_table_.insert(_note).second;
 }
 
-int AccessRights::SaveAllNotes()
+int AccessRights::SaveAllData()
 {
+	// Заполняем json объект
 	Cryptographer crypt;
-	string source_data;
+	json source_json;
+	for (auto it : users_table_)
+	{
+		json user_json;
+		user_json["login"] = it.login_;
+		user_json["password"] = it.password_;
+		source_json[it.login_] = user_json;
+	}
 
-	fstream src_data_file;
-	src_data_file.open(ACCESS_RIGHTS_FILE_PATH, std::ios::trunc);
+	// Конвертируем в строку и передаем шифровщику
+	string json_data = source_json.dump();
+	crypt.EncryptFile(USERS_DATA_FILE_PATH, json_data, internal_key);
 
-	string note_string;
+	source_json.clear();
+	json_data.clear();
+	// Заполняем json объект
 	for (auto it : access_table_)
 	{
-		note_string += it.name_;
-		note_string += it.path_;
-		note_string += std::to_string(it.type_);
-		note_string += it.owner_name_;
-		note_string += it.data_ + "\n";
+		json at_json;
+		at_json["name"] = it.name_;
+		at_json["type"] = std::to_string(it.type_);
+		at_json["owner"] = it.owner_name_;
+		at_json["data"] = it.data_;
+		at_json["path"] = it.path_;
 	}
-	note_string = crypt.EncryptData(note_string, internal_key);
-	src_data_file << note_string;
-	src_data_file.close();
 
-	return 0;
+	// Конвертируем в строку и передаем шифровщику
+	json_data = source_json.dump();
+	crypt.EncryptFile(ACCESS_RIGHTS_FILE_PATH, json_data, internal_key);
 }
 
 bool AccessRights::CheckUser(const User user)
@@ -98,5 +98,8 @@ bool AccessRights::CheckUser(const User user)
 	auto found_record = find_if(users_table_.begin(), users_table_.end(), [&](auto fnd) {
 		return fnd.login_ == user.login_;
 		});
-	if (found_record == )
+	if (found_record == users_table_.end())
+		return false;
+	else
+		return found_record->password_ == user.password_ ? true : false;
 }

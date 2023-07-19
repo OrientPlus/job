@@ -8,10 +8,15 @@
 #include <fstream>
 #include <sstream>
 
+#include <nlohmann/json.hpp>
+
 #include "cryptographer.hpp"
 
-#define ACCESS_RIGHTS_FILE_PATH "access_rights_encr.txt"
 
+#define ACCESS_RIGHTS_FILE_PATH "access_rights.json"
+#define USERS_DATA_FILE_PATH "users_data.json"
+
+using json = nlohmann::json;
 using std::vector;
 using std::string;
 using std::endl;
@@ -20,6 +25,7 @@ using std::cin;
 using std::set;
 using std::fstream;
 using std::stringstream;
+
 
 enum NoteType { kShared = 0, kEncrypted, kSpecialEncrypted };
 
@@ -56,7 +62,7 @@ private:
 	int InitializationRights();
 	bool CheckRights(User user, Note _note);
 	bool SetRights(User _user, Note _note);
-	int SaveAllNotes();
+	int SaveAllData();
 	bool CheckUser(const User user);
 
 	

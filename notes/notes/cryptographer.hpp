@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <fstream>
 
 #include <cryptopp/rsa.h>
 #include <cryptopp/osrng.h>
@@ -13,6 +14,9 @@
 #include <cryptopp/filters.h>
 
 
+using std::fstream;
+using std::ifstream;
+using std::ofstream;
 using std::vector;
 using std::string;
 using std::endl;
@@ -27,6 +31,9 @@ public:
     // Симметричное шифрование
 	string EncryptData(string data, const string kKey);
 	string DecryptData(string data, const string kKey);
+
+	int EncryptFile(const string input_filename, const string data, const string key);
+	string DecryptFile(const string input_filename, const string key);
 	
     // Ассиметричное шифрование
     string GenSessionKey();
