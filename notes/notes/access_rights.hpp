@@ -32,20 +32,27 @@ class User
 {
 public:
 	User() {};
+	User(string login, string password) : login_(login), password_(password) {};
 
 	bool operator<(const User &other) const
 	{
 		return login_ < other.login_;
 	}
-
 	bool operator==(const User &other) const
 	{
 		return login_ == other.login_ and password_ == other.password_;
 	}
-
 	bool operator>(const User& other) const
 	{
 		return login_ > other.login_;
+	}
+	User operator=(const User& other) const
+	{
+		User new_user;
+		new_user.login_ = other.login_;
+		new_user.password_ = other.password_;
+
+		return new_user;
 	}
 	string login_, password_;
 };
@@ -54,27 +61,24 @@ public:
 class Note
 {
 public:
-	Note() { 
-		type_ = kShared;
-	};
-
-	string name_, path_, owner_name_, data_;
-	int type_;
+	Note(string name, NoteType type) : name_(name), type_(type) {};
+	Note(string name, NoteType type, string password) : name_(name), type_(type), password_(password) {};
+	Note() { type_ = kShared; };
 
 	bool operator<(const Note& other) const
 	{
 		return data_.size() < other.data_.size();
 	}
-
-	bool operator==(const Note& other) const 
+	bool operator==(const Note& other) const
 	{
 		return name_ == other.name_;
 	}
-
 	bool operator>(const Note& other) const
 	{
 		return data_.size() > other.data_.size();
 	}
+	string name_, password_, owner_name_, data_;
+	int type_;
 };
 
 
@@ -84,14 +88,23 @@ public:
 	AccessRights();
 
 private:
+	friend class NotesManager;
 	int InitializationRights();
-	bool CheckRights(User user, Note _note);
-	bool SetRights(User _user, Note _note);
+	bool CheckRights(Note _note, string password);
+	bool SetRights(Note _note);
+	bool DeleteRights(Note _note);
 	int SaveAllData();
-	bool CheckUser(const User user);
+	set<Note>::iterator FindNote(string name);
+	string GetNoteList();
+
+	int CheckingUserData(const User user);
+	bool IsAuthorized(const User user);
+	int UserIsLoggedIn(const User user);
+	int UserIsLoggedOut(const User user);
 
 	
 	set<Note> access_table_;
+	set<User> authorized_users_;
 	set<User> users_table_;
 	string internal_key;
 };

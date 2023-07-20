@@ -1,4 +1,4 @@
-#include "cryptographer.hpp"
+#include "cryptographer.h"
 
 using namespace CryptoPP;
 
@@ -78,13 +78,11 @@ string Cryptographer::RsaEncrypt(string data, string key)
 // Дешифрует приватным RSA ключом
 string Cryptographer::RsaDecrypt(string data)
 {
-    if (data.empty())
-        return string{ "Empty data" };
     string decrypted_text;
-    AutoSeededRandomPool rng;
+    CryptoPP::AutoSeededRandomPool rng;
 
-    RSAES_OAEP_SHA_Decryptor d(private_key_);
-    StringSource(data, true, new PK_DecryptorFilter(rng, d, new StringSink(decrypted_text)));
+    CryptoPP::RSAES_OAEP_SHA_Decryptor d(private_key_);
+    CryptoPP::StringSource(data, true, new CryptoPP::PK_DecryptorFilter(rng, d, new CryptoPP::StringSink(decrypted_text)));
 
     return decrypted_text;
 }
@@ -96,8 +94,6 @@ int Cryptographer::AesEncryptFile(const string input_filename, const string data
     CFB_Mode<AES>::Encryption cfbEncryption((byte*)key.data(), AES::DEFAULT_KEYLENGTH, (byte*)key.data());
     string cipher_text;
 
-    if (data.empty())
-        return 0;
     StringSource(data, true, new StreamTransformationFilter(cfbEncryption, new StringSink(cipher_text)));
 
     // Сохранение зашифрованных данных в файл
@@ -118,7 +114,7 @@ string Cryptographer::AesDecryptFile(const string input_filename, const string k
 {
     // Чтение зашифрованных данных из файла
     ifstream input_file(input_filename, std::ios::binary);
-    if (!input_file) 
+    if (!input_file)
     {
         std::cerr << "Ошибка открытия зашифрованного файла: " << input_filename << std::endl;
         return "Error";

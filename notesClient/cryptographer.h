@@ -1,4 +1,0 @@
-#ifndef CRYPTOGRAPHER_H
-#define CRYPTOGRAPHER_H
-
-#endif // CRYPTOGRAPHER_H

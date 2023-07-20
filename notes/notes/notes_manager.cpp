@@ -68,6 +68,7 @@ int NotesManager::SendData(SOCKET socket, string data)
         cout << "Failed to send data." << endl;
         return -1;
     }
+    cout << "\nSEND DATA:\n" << data << endl;
     return ret;
 }
 
@@ -82,6 +83,8 @@ int NotesManager::RecvData(SOCKET socket, string data)
     }
 
     data = string{ &buffer[0], static_cast<size_t>(bytesReceived) };
+
+    cout << "\nRECV DATA:\n" << data << endl;
 
     return bytesReceived;
 }
@@ -137,13 +140,173 @@ VOID NotesManager::ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter
 
 int NotesManager::ExecuteCommand()
 {
+    Cryptographer crypt;
     SOCKET current_socket = client_socket_;
     User user;
 
+    // Авторизуем пользователя
     while (true)
     {
         if (IdentificationClient(user, current_socket) == 0)
             break;
+    }
+
+    string requested_command;
+    // Выполняем команды в цикле
+    while (true)
+    {
+        // Получаем и дешфируем данные от юзера
+        RecvData(current_socket, requested_command);
+        requested_command = crypt.AesDecryptData(requested_command, user.password_);
+
+        // Парсим и выполняем команду
+        ParsCommand(user, requested_command);
+
+        requested_command = crypt.AesEncryptData(requested_command, user.password_);
+        SendData(current_socket, requested_command);
+    }
+
+
+
+    return 0;
+}
+
+int NotesManager::ParsCommand(User user, string &data)
+{
+    stringstream ss(data);
+    string command, arg1, arg2, arg3, key;
+    ss >> command;
+    
+    Note note;
+    NoteType nt;
+    int switch_on = std::stoi(command);
+    switch (switch_on)
+    {
+    // CREATE_NOTE
+    case 1:
+        // Парсим команду
+        ss >> arg1 >> arg2;
+        if (arg1.empty() or arg2.empty())
+            return -1;
+
+        nt = static_cast<NoteType>(stoi(arg2));
+        if (nt == kSpecialEncrypted)
+            ss >> arg3;
+        if (arg3.empty())
+            return -1;
+
+        // Создаем заметку
+        note = CreateNote(arg1, nt, key);
+
+        data = "Successfull.";
+        return 0;
+
+    // DELETE_NOTE
+    case 2:
+        ss >> arg1;
+        if (arg1.empty())
+            return -1;
+        {
+            auto note_it = access_rights_.FindNote(arg1);
+            if (note_it == access_rights_.access_table_.end())
+                return -1;
+            note = *note_it;
+        }
+        key.clear();
+        if (note.type_ == kSpecialEncrypted)
+        {
+            ss >> key;
+            if (key.empty())
+                return -1;
+        }
+        else if (note.type_ == kEncrypted)
+            key = user.password_;
+
+        if (access_rights_.CheckRights(note, key))
+        {
+            DeleteNote(note);
+            data = "Successfull.";
+            return 0;
+        }
+        else
+            return -1;
+
+    // WRITE_NOTE
+    case 3:
+        ss >> arg1;
+        if (arg1.empty())
+            return -1;
+        {
+            auto note_it = access_rights_.FindNote(arg1);
+            if (note_it == access_rights_.access_table_.end())
+                return -1;
+            note = *note_it;
+        }
+
+        key.clear();
+        if (note.type_ == kSpecialEncrypted)
+        {
+            ss >> key;
+            if (key.empty())
+                return -1;
+        }
+        else if (note.type_ == kEncrypted)
+            key = user.password_;
+        
+        ss >> arg2;
+        if (arg2.empty())
+            return -1;
+
+        if (access_rights_.CheckRights(note, key))
+        {
+            WriteNote(note, arg2);
+            data = "Successfull.";
+            return 0;
+        }
+        else
+            return -1;
+
+    // READ_NOTE
+    case 4:
+        ss >> arg1;
+        if (arg1.empty())
+            return -1;
+        {
+            auto note_it = access_rights_.FindNote(arg1);
+            if (note_it == access_rights_.access_table_.end())
+                return -1;
+            note = *note_it;
+        }
+        key.clear();
+        if (note.type_ == kSpecialEncrypted)
+        {
+            ss >> key;
+            if (key.empty())
+                return -1;
+        }
+        else if (note.type_ == kEncrypted)
+            key = user.password_;
+
+        if (access_rights_.CheckRights(note, key))
+        {
+            data = ReadNote(note);
+            return 0;
+        }
+        else
+            return -1;
+
+    // SAVE_ALL
+    case 5:
+        SaveAllNotes();
+        data = "Successfull.";
+        return 0;
+
+    // LOAD_ALL
+    case 6:
+        data = LoadAllNotes();
+        return 0;
+    default:
+        return -10;
     }
 
     return 0;
@@ -152,10 +315,10 @@ int NotesManager::ExecuteCommand()
 bool NotesManager::IdentificationClient(User &user, SOCKET user_socket)
 {
     // 1. Генерируем два ключа (секретный и публичный)
-    crypt_.GenSessionKey();
+    crypt_.GenRsaKey();
 
     // 2. Отправляем публичный ключ клиенту
-    if (SendData(user_socket, crypt_.public_key_string_) == 0)
+    if (SendData(user_socket, crypt_.rsa_public_key_string_) == 0)
     {
         cout << "Error sending a message to the client " << user_socket << endl;
         return -1;
@@ -170,68 +333,66 @@ bool NotesManager::IdentificationClient(User &user, SOCKET user_socket)
     }
 
     // 4. Дешифруем приватным ключом
-    string decrypted_text = crypt_.DecryptBySessionKey(data);
+    string decrypted_text = crypt_.RsaDecrypt(data);
+    cout << "\nDecr user data = " << decrypted_text << endl;
 
     // 5. Авторизуем/регистрируем клиента
     user.login_ = decrypted_text.substr(0, decrypted_text.find(' '));
     user.password_ = decrypted_text.substr(decrypted_text.find(' ') + 1);
 
-
-
-    /*auto fnd = access.checkUser(curUser);
-    if (!fnd.first)
+    int ret_value = access_rights_.CheckingUserData(user);
+    if (ret_value == -1)
     {
-        sendData("Такой пользователь уже авторизован!", client);
-        return -1;
+        SendData(user_socket, "Invalid authorization data!");
+        return false;
     }
-    if (fnd.second.password != curUser.password)
+    else if (ret_value == -10)
     {
-        sendData("Неверный пароль!", client);
-        return -1;
-    }
-    curUser = fnd.second;
-    curUser.sock = client;
-
-    // Если авторизация прошла успешно - создаем провайдер для шифрования
-    // и генерируем ключ симметричной криптографии на основе пароля юзера
-    if (!CryptAcquireContext(&curUser.hCryptProv, NULL, MS_ENHANCED_PROV, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
-    {
-        cerr << "Ошибка получения провайдера симметричного шифрования: " << GetLastError() << "  " << system_category().message(GetLastError()) << endl;
-        system("pause");
-        return -1;
+        SendData(user_socket, "Such a user is already logged in!");
+        return false;
     }
 
-    //-----------------------------------------------------------
-    // Create a hash object. 
-    if (!CryptCreateHash(curUser.hCryptProv, CALG_MD5, 0, 0, &curUser.hHash))
-    {
-        cerr << "Ошибка получения хеша ключа симметричного шифрования: " << GetLastError() << "  " << system_category().message(GetLastError()) << endl;
-        system("pause");
-        return -1;
-    }
+    access_rights_.UserIsLoggedIn(user);
+    SendData(user_socket, "Authorization is successful!");
 
-    //-----------------------------------------------------------
-    // Hash the password. 
-    if (!CryptHashData(curUser.hHash, (BYTE*)curUser.password.data(), curUser.password.size(), 0))
-    {
-        cerr << "Ошибка хеширования пароля для ключа симметричного шифрования: " << GetLastError() << "  " << system_category().message(GetLastError()) << endl;
-        system("pause");
-        return -1;
-    }
+    return true;
+}
 
-    //-----------------------------------------------------------
-    // Derive a session key from the hash object. 
-    if (!CryptDeriveKey(curUser.hCryptProv, ENCRYPT_ALGORITHM, curUser.hHash, KEYLENGTH, &curUser.key))
-    {
-        cerr << "Ошибка получения провайдера симметричного шифрования: " << GetLastError() << "  " << system_category().message(GetLastError()) << endl;
-        system("pause");
-        return -1;
-    }
+Note NotesManager::CreateNote(string name, NoteType type, string key)
+{
+    Note note(name, type, key);
 
-    curUser.keyFl = curUser.cryptProvFl = curUser.hashFl = true;
+    access_rights_.SetRights(note);
 
-    sendData("Authorization is successful!", client);*/
+    return note;
+}
 
+int NotesManager::DeleteNote(Note &note)
+{
+    access_rights_.DeleteRights(note);
     return 0;
-    return false;
+}
+
+string NotesManager::ReadNote(Note &note)
+{
+    return note.data_;
+}
+
+int NotesManager::WriteNote(Note& note, string data)
+{
+    note.data_ = data;
+    return 0;
+}
+
+int NotesManager::SaveAllNotes()
+{
+    access_rights_.SaveAllData();
+    return 0;
+}
+
+string NotesManager::LoadAllNotes()
+{
+    access_rights_.InitializationRights();
+
+    return access_rights_.GetNoteList();
 }

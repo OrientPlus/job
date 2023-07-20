@@ -3,6 +3,7 @@
 
 int main()
 {
+	setlocale(LC_ALL, "rus");
 	NotesManager nm;
 
 	nm.run();

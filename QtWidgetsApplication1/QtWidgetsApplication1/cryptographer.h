@@ -28,17 +28,17 @@ class Cryptographer
 {
 public:
 	Cryptographer();
-    // Симметричное шифрование
+	// Симметричное шифрование
 	string AesEncryptData(string data, const string kKey);
 	string AesDecryptData(string data, const string kKey);
 
 	int AesEncryptFile(const string input_filename, const string data, const string key);
 	string AesDecryptFile(const string input_filename, const string key);
-	
-    // Ассиметричное шифрование
-    string GenRsaKey();
+
+	// Ассиметричное шифрование
+	string GenRsaKey();
 	string RsaDecrypt(string data);
-    string RsaEncrypt(string data, string key);
+	string RsaEncrypt(string data, string key);
 
 	string rsa_public_key_string_;
 

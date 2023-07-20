@@ -71,3 +71,9 @@ dkms.conf
 *.vsidx
 *.lock
 *.bin
+*.props
+*.stash
+*.cbt
+*.res
+*.idx
+*.natvis

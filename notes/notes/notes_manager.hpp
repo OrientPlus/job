@@ -15,7 +15,7 @@
 #define DEFAULT_PORT "8888"
 #define TH_SIZE_MAXIMUM 5
 #define TH_SIZE_MINIMUM 2
-#define RECV_BUFFER_SIZE 1024
+#define RECV_BUFFER_SIZE 4096
 
 
 using std::string;
@@ -28,7 +28,6 @@ class NotesManager
 {
 public:
     int run();
-    //int ExecuteCommand();
 
 private:
     int StartServer();
@@ -38,12 +37,13 @@ private:
 
     static VOID CALLBACK ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
     int ExecuteCommand();
-    int CreateNote(string name);
-    int DeleteNote(string name);
-    int EditNote(string name);
-    int ReadNote(string name);
+    int ParsCommand(User user, string &data);
+    Note CreateNote(string name, NoteType type, string key);
+    int DeleteNote(Note &note);
+    string ReadNote(Note &note);
+    int WriteNote(Note &note, string data);
     int SaveAllNotes();
-    int LoadAllNotes();
+    string LoadAllNotes();
 
     bool IdentificationClient(User &user, SOCKET user_socket);
 
