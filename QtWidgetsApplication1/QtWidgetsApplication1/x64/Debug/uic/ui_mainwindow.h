@@ -30,7 +30,7 @@ public:
     QWidget *centralWidget;
     QPushButton *LoadAllNotes;
     QPushButton *SaveAllNotes;
-    QListWidget *NotesList;
+    QListWidget *listWidget;
     QMenuBar *menuBar;
     QMenu *menuMenu;
     QToolBar *mainToolBar;
@@ -40,7 +40,7 @@ public:
     {
         if (MainWindowClass->objectName().isEmpty())
             MainWindowClass->setObjectName(QString::fromUtf8("MainWindowClass"));
-        MainWindowClass->resize(285, 329);
+        MainWindowClass->resize(286, 324);
         actionCreate_new_note = new QAction(MainWindowClass);
         actionCreate_new_note->setObjectName(QString::fromUtf8("actionCreate_new_note"));
         centralWidget = new QWidget(MainWindowClass);
@@ -51,13 +51,13 @@ public:
         SaveAllNotes = new QPushButton(centralWidget);
         SaveAllNotes->setObjectName(QString::fromUtf8("SaveAllNotes"));
         SaveAllNotes->setGeometry(QRect(110, 250, 75, 23));
-        NotesList = new QListWidget(centralWidget);
-        NotesList->setObjectName(QString::fromUtf8("NotesList"));
-        NotesList->setGeometry(QRect(10, 10, 261, 231));
+        listWidget = new QListWidget(centralWidget);
+        listWidget->setObjectName(QString::fromUtf8("listWidget"));
+        listWidget->setGeometry(QRect(10, 10, 261, 231));
         MainWindowClass->setCentralWidget(centralWidget);
         menuBar = new QMenuBar(MainWindowClass);
         menuBar->setObjectName(QString::fromUtf8("menuBar"));
-        menuBar->setGeometry(QRect(0, 0, 285, 21));
+        menuBar->setGeometry(QRect(0, 0, 286, 21));
         menuMenu = new QMenu(menuBar);
         menuMenu->setObjectName(QString::fromUtf8("menuMenu"));
         MainWindowClass->setMenuBar(menuBar);

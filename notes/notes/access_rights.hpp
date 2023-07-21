@@ -62,7 +62,7 @@ class Note
 {
 public:
 	Note(string name, NoteType type) : name_(name), type_(type) {};
-	Note(string name, NoteType type, string password) : name_(name), type_(type), password_(password) {};
+	Note(string name, NoteType type, string password, string owner) : name_(name), type_(type), password_(password), owner_name_(owner) {};
 	Note() { type_ = kShared; };
 
 	bool operator<(const Note& other) const

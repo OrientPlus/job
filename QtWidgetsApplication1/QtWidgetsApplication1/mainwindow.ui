@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>285</width>
-    <height>329</height>
+    <width>286</width>
+    <height>324</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -40,7 +40,7 @@
      <string>Save all notes</string>
     </property>
    </widget>
-   <widget class="QListWidget" name="NotesList">
+   <widget class="QListWidget" name="listWidget">
     <property name="geometry">
      <rect>
       <x>10</x>
@@ -56,7 +56,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>285</width>
+     <width>286</width>
      <height>21</height>
     </rect>
    </property>

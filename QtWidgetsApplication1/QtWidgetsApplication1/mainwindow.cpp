@@ -7,6 +7,11 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(ui.LoadAllNotes, &QPushButton::clicked, this, &MainWindow::LoadAllNotes);
     connect(ui.SaveAllNotes, &QPushButton::clicked, this, &MainWindow::SaveAllNotes);
+    connect(ui.actionCreate_new_note, &QAction::triggered, this, &MainWindow::CreateNewNote);
+    connect(ui.listWidget, &QListWidget::itemDoubleClicked, this, &MainWindow::OpenNote);
+
+    port_ = "8888";
+    ip_address_ = "localhost";
 }
 
 MainWindow::~MainWindow()
@@ -14,21 +19,16 @@ MainWindow::~MainWindow()
 
 void MainWindow::run()
 {
-    /*if (StartClient() != 0)
-        Message("Error connecting to server!");*/
-    StartClient();
-
-    Cryptographer crypt;
+    if (StartClient() != 0)
+        Message("Error connecting to server!");
 
     while (true)
     {
         if (Authorization())
             break;
-        /*else
-            Message(error_message_);*/
+        else
+            Message(error_message_);
     }
-
-
 }
 
 int MainWindow::StartClient()
@@ -172,17 +172,230 @@ bool MainWindow::Authorization()
 
     window->show();
     loop.exec();
-    return true;
+
+    return auth;
 }
 
 void MainWindow::SaveAllNotes()
 {
+    string command = std::to_string(kSaveAll);
+    command = crypt_.AesEncryptData(command, password_);
+    SendData(command);
 
+    command = RecvData();
+    command = crypt_.AesDecryptData(command, password_);
+    if (command != "0")
+    {
+        Message("Error saving notes!");
+    }
+    else
+        Message("Successfully saved.");
+
+    return;
 }
 
 void MainWindow::LoadAllNotes()
 {
 
+}
+
+void MainWindow::CreateNewNote()
+{
+    string command = std::to_string(kCreateNew);
+
+    // Создаем окно для ввода параметров заметки
+    QWidget* window = new QWidget();
+    window->setWindowTitle("Creating a note");
+
+    // Создаем поля для ввода данных и кнопку
+    QLineEdit* name_edit = new QLineEdit();
+    QLineEdit* special_password_edit = new QLineEdit();
+    QComboBox* type_box = new QComboBox();
+    type_box->addItem(QString{ "Shared" }, QString{ "0" });
+    type_box->addItem(QString{ "Def. Encrypt" }, QString{ "1" });
+    type_box->addItem(QString{ "Spec. Encrypt" }, QString{ "2" });
+    QPushButton* create_button = new QPushButton("Create");
+
+    // Создаем макет и добавляем наши виджеты в него
+    QFormLayout* layout = new QFormLayout();
+    layout->addRow("Name:", name_edit);
+    layout->addWidget(type_box);
+    layout->addRow("Special password:", special_password_edit);
+    layout->addWidget(create_button);
+
+    window->setLayout(layout);
+
+    // Кнопка "create"
+    QEventLoop loop;
+    QObject::connect(create_button, &QPushButton::clicked, &loop, [&]() {
+        QString name = name_edit->text();
+        NoteType type = static_cast<NoteType>(type_box->currentIndex());
+
+        string note_name = name.toStdString(),
+            send_command = command + " " + note_name + " " + std::to_string(type);
+        if (type == kSpecialEncrypted)
+        {
+            send_command += " " + special_password_edit->text().toStdString();
+        }
+
+        // Шифруем данные, отправляем на сервер и получаем ответ
+        string encrypted_data = crypt_.AesEncryptData(send_command, password_);
+        SendData(encrypted_data);
+        encrypted_data = RecvData();
+
+        encrypted_data = crypt_.AesDecryptData(encrypted_data, password_);
+        if (encrypted_data != "0")
+            Message("Error creation note! Try again.");
+
+        // Обновляем отображаемый список заметок
+        UpdateNoteList();
+        window->close();
+        });
+
+    window->show();
+    loop.exec();
+}
+
+void MainWindow::ReadNote()
+{
+
+}
+
+void MainWindow::WriteNote()
+{
+
+}
+
+void MainWindow::DeleteNote()
+{
+
+}
+
+void MainWindow::UpdateNoteList()
+{
+    string command = std::to_string(kGetActualNoteList);
+
+    command = crypt_.AesEncryptData(command, password_);
+
+    SendData(command);
+
+    command = RecvData();
+    command = crypt_.AesDecryptData(command, password_);
+
+    // Парсим полученный список заметок
+    std::vector<string> note_names;
+    std::stringstream ss(command);
+    while (ss >> command)
+        note_names.push_back(command);
+
+    // Добавляем записи в виджет заметок
+    for(auto it : note_names)
+        ui.listWidget->addItem(QString::fromStdString(it));
+
+    ui.listWidget->update();
+}
+
+void MainWindow::OpenNote(QListWidgetItem* item)
+{
+    // Получаем тип заметки
+    string command = std::to_string(kGetNoteTypeInfo);
+    command = crypt_.AesEncryptData(command, password_);
+    SendData(command);
+    command = RecvData();
+    string type_str = crypt_.AesDecryptData(command, password_);
+    NoteType type = static_cast<NoteType>(std::stoi(type_str));
+
+    string special_password;
+    if (type == kSpecialEncrypted)
+    {
+        // Создаем окно для запроса специального пароля
+        QWidget* window = new QWidget();
+        window->setWindowTitle("Creating a note");
+
+        // Создаем поля для ввода данных и кнопку
+        QLineEdit* special_password_edit = new QLineEdit();
+        special_password_edit->setEchoMode(QLineEdit::PasswordEchoOnEdit);
+
+        QPushButton* send_button = new QPushButton("Send");
+
+        // Создаем макет и добавляем наши виджеты в него
+        QFormLayout* layout = new QFormLayout();
+        layout->addRow("Special password:", special_password_edit);
+        layout->addWidget(send_button);
+
+        window->setLayout(layout);
+
+        QEventLoop loop;
+        QObject::connect(send_button, &QPushButton::clicked, &loop, [&]() {
+            special_password = special_password_edit->text().toStdString();
+            window->close();
+            });
+
+        window->show();
+        loop.exec();
+    }
+
+    // Формируем запрос к серверу, отправляем, получаем ответ
+    command = std::to_string(kRead) + " " + item->text().toStdString();
+    type == kSpecialEncrypted ? command += " " + special_password : command;
+    
+    command = crypt_.AesEncryptData(command, password_);
+    SendData(command);
+    command = RecvData();
+    command = crypt_.AesDecryptData(command, password_);
+    if (command == "Access denied!")
+    {
+        Message(command);
+        return;
+    }
+
+    // Если доступ разрешен, создаем окно заметки
+    QWidget* note_window = new QWidget();
+    note_window->resize(200, 800);
+    QTextEdit* text_edit = new QTextEdit();
+    QPushButton* save_button = new QPushButton("Save"),
+        *clear_button = new QPushButton("Clear");
+
+    text_edit->setPlainText(QString::fromStdString(command));
+    setCentralWidget(text_edit);
+    QFormLayout* layout = new QFormLayout();
+    layout->addRow(text_edit);
+    layout->addWidget(save_button);
+    layout->addWidget(clear_button);
+
+    note_window->setLayout(layout);
+
+    // Кнопка "save"
+    QObject::connect(save_button, &QPushButton::clicked, [&]() {
+        command = std::to_string(kWrite);
+        string note_data = text_edit->toPlainText().toStdString(),
+            send_command = command + " " + item->text().toStdString();
+
+        if (type == kSpecialEncrypted)
+            send_command += " " + special_password;
+
+        send_command += " " + note_data;
+
+        // Шифруем данные, отправляем на сервер и получаем ответ
+        string encrypted_data = crypt_.AesEncryptData(send_command, password_);
+        SendData(encrypted_data);
+        encrypted_data = RecvData();
+
+        encrypted_data = crypt_.AesDecryptData(encrypted_data, password_);
+        if (encrypted_data != "0")
+            Message(encrypted_data);
+
+        //note_window->close();
+        });
+
+    // Кнопка "clear"
+    QObject::connect(save_button, &QPushButton::clicked, [&]() {
+        text_edit->clear();
+        });
+
+    note_window->show();
+
+    return;
 }
 
 int MainWindow::Message(string msg)

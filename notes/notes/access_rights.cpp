@@ -30,35 +30,41 @@ int AccessRights::InitializationRights()
 	Cryptographer crypt;
 	string json_data;
 	json_data = crypt.AesDecryptFile(ACCESS_RIGHTS_FILE_PATH, internal_key);
-	if (json_data == "Error")
-		return 0;
-	json source_json;
-	source_json = json::parse(json_data);
-	// Заполняем поля из json объекта
-	Note temp_note;
-	for (const auto& [key, value] : source_json.items())
-	{
-		temp_note.name_ = key;
-		temp_note.type_ = value["type"];
-		temp_note.owner_name_ = value["owner"];
-		temp_note.data_ = value["data"];
-		temp_note.password_ = value["password"];
 
-		access_table_.insert(temp_note);
+	json source_json;
+
+	if (json_data != "Error")
+	{
+		source_json = json::parse(json_data);
+		// Заполняем поля из json объекта
+		Note temp_note;
+		for (const auto& [key, value] : source_json.items())
+		{
+			temp_note.name_ = key;
+			temp_note.type_ = value["type"];
+			temp_note.owner_name_ = value["owner"];
+			temp_note.data_ = value["data"];
+			temp_note.password_ = value["password"];
+
+			access_table_.insert(temp_note);
+		}
 	}
 
 	// Дешифруем данные из json, передаем в json объект
 	json_data.clear();
 	json_data = crypt.AesDecryptFile(USERS_DATA_FILE_PATH, internal_key);
-	source_json = json::parse(json_data);
-	// Заполняем поля из json объекта
-	User temp_user;
-	for (const auto& [key, value] : source_json.items())
+	if (json_data != "Error")
 	{
-		temp_user.login_ = key;
-		temp_user.password_ = value["password"];
+		source_json = json::parse(json_data);
+		// Заполняем поля из json объекта
+		User temp_user;
+		for (const auto& [key, value] : source_json.items())
+		{
+			temp_user.login_ = key;
+			temp_user.password_ = value["password"];
 
-		users_table_.insert(temp_user);
+			users_table_.insert(temp_user);
+		}
 	}
 	
 	return 0;

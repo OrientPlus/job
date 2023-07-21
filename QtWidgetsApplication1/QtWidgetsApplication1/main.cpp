@@ -4,10 +4,9 @@
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
-    MainWindow w("localhost", "8888");
+    MainWindow w;
     w.show();
     w.run();
 
-    a.exec();
-    return 0;
+    return a.exec();
 }

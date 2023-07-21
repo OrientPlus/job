@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <sstream>
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -18,6 +19,8 @@
 #include <QDialog>
 #include <QLabel>
 #include <QVBoxLayout>
+#include <QComboBox>
+#include <QTextEdit>
 
 #include "ui_mainwindow.h"
 #include "cryptographer.h"
@@ -28,14 +31,15 @@
 
 #define RECV_BUFFER_SIZE 4096
 
+enum Command { kCreateNew, kDelete, kWrite, kRead, kSaveAll, kLoadAll, kGetActualNoteList, kGetNoteTypeInfo };
+enum NoteType { kShared = 0, kEncrypted, kSpecialEncrypted };
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
 public:
-    MainWindow(QWidget *parent = nullptr);
-    //MainWindow(string ip_address_ = "localhost", string port_ = "8888", QWidget* parent = nullptr) {};
-    MainWindow(string ip_address, string port, QWidget* parent = nullptr) : port_(port), ip_address_(ip_address) {};
+    MainWindow(QWidget* parent = nullptr);
     ~MainWindow();
 
     void run();
@@ -49,6 +53,8 @@ private:
 
     bool Authorization();
 
+    void UpdateNoteList();
+
     Ui::MainWindowClass ui;
     Cryptographer crypt_;
     SOCKET socket_;
@@ -59,5 +65,10 @@ private:
 public slots:
     void LoadAllNotes();
     void SaveAllNotes();
+    void CreateNewNote();
+    void DeleteNote();
+    void ReadNote();
+    void WriteNote();
+    void OpenNote(QListWidgetItem* item);
 };
 

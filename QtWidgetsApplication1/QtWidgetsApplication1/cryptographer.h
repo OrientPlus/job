@@ -12,6 +12,9 @@
 #include <cryptopp/aes.h>
 #include <cryptopp/modes.h>
 #include <cryptopp/filters.h>
+#include <cryptopp/cryptlib.h>
+#include <cryptopp/hex.h>
+#include <cryptopp/pwdbased.h> // Для PKCS5_PBKDF2_HMAC
 
 
 using std::fstream;
@@ -31,6 +34,9 @@ public:
 	// Симметричное шифрование
 	string AesEncryptData(string data, const string kKey);
 	string AesDecryptData(string data, const string kKey);
+
+	//string _AesEncryptData(string data, const string kKey);
+	//string _AesDecryptData(string data, const string kKey);
 
 	int AesEncryptFile(const string input_filename, const string data, const string key);
 	string AesDecryptFile(const string input_filename, const string key);

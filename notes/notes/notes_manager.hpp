@@ -23,6 +23,7 @@ using std::vector;
 using std::lock_guard;
 using std::mutex;
 
+enum Command {kCreateNew, kDelete, kWrite, kRead, kSaveAll, kLoadAll, kGetActualNoteList, kGetNoteTypeInfo};
 
 class NotesManager
 {
@@ -33,25 +34,26 @@ private:
     int StartServer();
     int StopServer();
     int SendData(SOCKET socket, string data);
-    int RecvData(SOCKET socket, string data);
+    int RecvData(SOCKET socket, string &data);
 
     static VOID CALLBACK ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
     int ExecuteCommand();
     int ParsCommand(User user, string &data);
-    Note CreateNote(string name, NoteType type, string key);
+    Note CreateNote(string name, NoteType type, string key, string owner);
     int DeleteNote(Note &note);
     string ReadNote(Note &note);
     int WriteNote(Note &note, string data);
     int SaveAllNotes();
     string LoadAllNotes();
-
+    string GetNoteList();
+    string GetNoteTypeInfo(string note_name);
     bool IdentificationClient(User &user, SOCKET user_socket);
 
 
     AccessRights access_rights_;
     Cryptographer crypt_;
 
-    static mutex mt_;
+    mutex mt_;
 
     // Поля многопотока
     PTP_POOL pool_;

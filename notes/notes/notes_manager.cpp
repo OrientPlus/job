@@ -72,7 +72,7 @@ int NotesManager::SendData(SOCKET socket, string data)
     return ret;
 }
 
-int NotesManager::RecvData(SOCKET socket, string data)
+int NotesManager::RecvData(SOCKET socket, string &data)
 {
     char buffer[RECV_BUFFER_SIZE];
     int bytesReceived = recv(socket, buffer, RECV_BUFFER_SIZE, 0);
@@ -140,14 +140,13 @@ VOID NotesManager::ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter
 
 int NotesManager::ExecuteCommand()
 {
-    Cryptographer crypt;
     SOCKET current_socket = client_socket_;
     User user;
 
     // Авторизуем пользователя
     while (true)
     {
-        if (IdentificationClient(user, current_socket) == 0)
+        if (IdentificationClient(user, current_socket))
             break;
     }
 
@@ -157,16 +156,24 @@ int NotesManager::ExecuteCommand()
     {
         // Получаем и дешфируем данные от юзера
         RecvData(current_socket, requested_command);
-        requested_command = crypt.AesDecryptData(requested_command, user.password_);
 
+        {
+            lock_guard<mutex> lock(mt_);
+            requested_command = crypt_.AesDecryptData(requested_command, user.password_);
+        }
+        
         // Парсим и выполняем команду
         ParsCommand(user, requested_command);
 
-        requested_command = crypt.AesEncryptData(requested_command, user.password_);
+        {
+            lock_guard<mutex> lock(mt_);
+            requested_command = crypt_.AesEncryptData(requested_command, user.password_);
+        }
+
         SendData(current_socket, requested_command);
     }
 
-
+    cout << "\nAuth success!";
 
     return 0;
 }
@@ -174,7 +181,7 @@ int NotesManager::ExecuteCommand()
 int NotesManager::ParsCommand(User user, string &data)
 {
     stringstream ss(data);
-    string command, arg1, arg2, arg3, key;
+    string command, arg1, arg2, key;
     ss >> command;
     
     Note note;
@@ -183,7 +190,7 @@ int NotesManager::ParsCommand(User user, string &data)
     switch (switch_on)
     {
     // CREATE_NOTE
-    case 1:
+    case kCreateNew:
         // Парсим команду
         ss >> arg1 >> arg2;
         if (arg1.empty() or arg2.empty())
@@ -191,18 +198,22 @@ int NotesManager::ParsCommand(User user, string &data)
 
         nt = static_cast<NoteType>(stoi(arg2));
         if (nt == kSpecialEncrypted)
-            ss >> arg3;
-        if (arg3.empty())
-            return -1;
+        {
+            ss >> key;
+            if (key.empty())
+                return -1;
+        }
+        else
+            key = user.password_;
 
         // Создаем заметку
-        note = CreateNote(arg1, nt, key);
+        note = CreateNote(arg1, nt, key, user.login_);
 
-        data = "Successfull.";
+        data = "0";
         return 0;
 
     // DELETE_NOTE
-    case 2:
+    case kDelete:
         ss >> arg1;
         if (arg1.empty())
             return -1;
@@ -225,14 +236,14 @@ int NotesManager::ParsCommand(User user, string &data)
         if (access_rights_.CheckRights(note, key))
         {
             DeleteNote(note);
-            data = "Successfull.";
-            return 0;
+            data = "0";
         }
         else
-            return -1;
+            data = "Access denied!";
+        return 0;
 
     // WRITE_NOTE
-    case 3:
+    case kWrite:
         ss >> arg1;
         if (arg1.empty())
             return -1;
@@ -260,14 +271,14 @@ int NotesManager::ParsCommand(User user, string &data)
         if (access_rights_.CheckRights(note, key))
         {
             WriteNote(note, arg2);
-            data = "Successfull.";
-            return 0;
+            data = "0";
         }
         else
-            return -1;
+            data = "Access denied!";
+        return 0;
 
     // READ_NOTE
-    case 4:
+    case kRead:
         ss >> arg1;
         if (arg1.empty())
             return -1;
@@ -288,25 +299,35 @@ int NotesManager::ParsCommand(User user, string &data)
             key = user.password_;
 
         if (access_rights_.CheckRights(note, key))
-        {
             data = ReadNote(note);
-            return 0;
-        }
         else
-            return -1;
+            data = "Access denied!";
+        return 0;
 
     // SAVE_ALL
-    case 5:
+    case kSaveAll:
         SaveAllNotes();
-        data = "Successfull.";
+        data = "0";
         return 0;
 
     // LOAD_ALL
-    case 6:
+    case kLoadAll:
         data = LoadAllNotes();
         return 0;
+    case kGetActualNoteList:
+        data = GetNoteList();
+        return 0;
+    case kGetNoteTypeInfo:
+        ss >> arg1;
+        if (arg1.empty())
+            return -1;
+        
+        data = GetNoteTypeInfo(arg1);
+        return 0;
+
     default:
-        return -10;
+        data = "Unsupported command!";
+        return 0;
     }
 
     return 0;
@@ -321,7 +342,7 @@ bool NotesManager::IdentificationClient(User &user, SOCKET user_socket)
     if (SendData(user_socket, crypt_.rsa_public_key_string_) == 0)
     {
         cout << "Error sending a message to the client " << user_socket << endl;
-        return -1;
+        return false;
     }
 
     string data;
@@ -329,7 +350,7 @@ bool NotesManager::IdentificationClient(User &user, SOCKET user_socket)
     if (RecvData(user_socket, data) == 0)
     {
         cout << "Error receiving data from the client " << user_socket;
-        return -1;
+        return false;
     }
 
     // 4. Дешифруем приватным ключом
@@ -353,14 +374,15 @@ bool NotesManager::IdentificationClient(User &user, SOCKET user_socket)
     }
 
     access_rights_.UserIsLoggedIn(user);
-    SendData(user_socket, "Authorization is successful!");
+    string ed_data = crypt_.AesEncryptData("Authorization is successful!", user.password_);
+    SendData(user_socket, ed_data);
 
     return true;
 }
 
-Note NotesManager::CreateNote(string name, NoteType type, string key)
+Note NotesManager::CreateNote(string name, NoteType type, string key, string owner)
 {
-    Note note(name, type, key);
+    Note note(name, type, key, owner);
 
     access_rights_.SetRights(note);
 
@@ -395,4 +417,18 @@ string NotesManager::LoadAllNotes()
     access_rights_.InitializationRights();
 
     return access_rights_.GetNoteList();
+}
+
+string NotesManager::GetNoteList()
+{
+    return access_rights_.GetNoteList();
+}
+
+string NotesManager::GetNoteTypeInfo(string note_name)
+{
+    auto note_it = access_rights_.FindNote(note_name);
+    if (note_it == access_rights_.access_table_.end())
+        return string{"Note not found"};
+    
+    return string{ std::to_string(note_it->type_) };
 }
