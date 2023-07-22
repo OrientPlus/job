@@ -41,6 +41,13 @@ public:
         if (MainWindowClass->objectName().isEmpty())
             MainWindowClass->setObjectName(QString::fromUtf8("MainWindowClass"));
         MainWindowClass->resize(286, 324);
+        QSizePolicy sizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+        sizePolicy.setHorizontalStretch(0);
+        sizePolicy.setVerticalStretch(0);
+        sizePolicy.setHeightForWidth(MainWindowClass->sizePolicy().hasHeightForWidth());
+        MainWindowClass->setSizePolicy(sizePolicy);
+        MainWindowClass->setFocusPolicy(Qt::StrongFocus);
+        MainWindowClass->setTabShape(QTabWidget::Rounded);
         actionCreate_new_note = new QAction(MainWindowClass);
         actionCreate_new_note->setObjectName(QString::fromUtf8("actionCreate_new_note"));
         centralWidget = new QWidget(MainWindowClass);
@@ -78,7 +85,7 @@ public:
 
     void retranslateUi(QMainWindow *MainWindowClass)
     {
-        MainWindowClass->setWindowTitle(QCoreApplication::translate("MainWindowClass", "MainWindow", nullptr));
+        MainWindowClass->setWindowTitle(QCoreApplication::translate("MainWindowClass", "Note manager", nullptr));
         actionCreate_new_note->setText(QCoreApplication::translate("MainWindowClass", "Create new note", nullptr));
         LoadAllNotes->setText(QCoreApplication::translate("MainWindowClass", "Load all notes", nullptr));
         SaveAllNotes->setText(QCoreApplication::translate("MainWindowClass", "Save all notes", nullptr));

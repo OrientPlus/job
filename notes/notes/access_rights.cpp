@@ -7,7 +7,7 @@ AccessRights::AccessRights()
 	InitializationRights();
 }
 
-set<Note>::iterator AccessRights::FindNote(string name)
+vector<Note>::iterator AccessRights::FindNote(string name)
 {
 	return find_if(access_table_.begin(), access_table_.end(), [&](auto fnd) {
 		return fnd.name_ == name;
@@ -46,7 +46,7 @@ int AccessRights::InitializationRights()
 			temp_note.data_ = value["data"];
 			temp_note.password_ = value["password"];
 
-			access_table_.insert(temp_note);
+			access_table_.push_back(temp_note);
 		}
 	}
 
@@ -63,22 +63,19 @@ int AccessRights::InitializationRights()
 			temp_user.login_ = key;
 			temp_user.password_ = value["password"];
 
-			users_table_.insert(temp_user);
+			users_table_.push_back(temp_user);
 		}
 	}
 	
 	return 0;
 }
 
-bool AccessRights::CheckRights(Note _note, string password)
+bool AccessRights::CheckRights(vector<Note>::iterator note_it, string password)
 {
-	auto found_value = find_if(access_table_.begin(), access_table_.end(), [&](auto curr) {
-		return curr.name_ == _note.name_;
-		});
-	if (found_value != access_table_.end())
+	if (note_it != access_table_.end())
 	{
-		if (found_value->type_ != kShared)
-			return found_value->password_ == password ? true : false;
+		if (note_it->type_ != kShared)
+			return note_it->password_ == password ? true : false;
 		else
 			return true;
 	}
@@ -86,14 +83,27 @@ bool AccessRights::CheckRights(Note _note, string password)
 		return false;
 }
 
-bool AccessRights::SetRights(Note _note)
+int AccessRights::ChangeNoteType(vector<Note>::iterator note_it, NoteType new_type, string pass)
 {
-	return access_table_.insert(_note).second;
+	if (note_it == access_table_.end())
+		return -1;
+
+	note_it->type_ = new_type;
+	if (new_type != kShared)
+		note_it->password_ = pass;
+
+	return 0;
 }
 
-bool AccessRights::DeleteRights(Note _note)
+int AccessRights::SetRights(Note _note)
 {
-	access_table_.erase(_note);
+	access_table_.push_back(_note);
+	return 0;
+}
+
+bool AccessRights::DeleteRights(vector<Note>::iterator note_it)
+{
+	access_table_.erase(note_it);
 	return true;
 }
 
@@ -143,7 +153,7 @@ int AccessRights::CheckingUserData(const User user)
 	{
 		// Если такого юзера не существует, регистрируем его
 		User new_user = user;
-		users_table_.insert(new_user);
+		users_table_.push_back(new_user);
 		UserIsLoggedIn(new_user);
 
 		return 0;
@@ -167,12 +177,12 @@ bool AccessRights::IsAuthorized(const User user)
 
 int AccessRights::UserIsLoggedIn(const User user)
 {
-	authorized_users_.insert(user);
+	authorized_users_.push_back(user);
 	return 0;
 }
 
 int AccessRights::UserIsLoggedOut(const User user)
 {
-	authorized_users_.erase(user);
+	authorized_users_.erase(find(authorized_users_.begin(), authorized_users_.end(), user));
 	return 0;
 }

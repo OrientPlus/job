@@ -21,6 +21,9 @@
 #include <QVBoxLayout>
 #include <QComboBox>
 #include <QTextEdit>
+#include <QPoint>
+#include <QSignalMapper>
+#include <QMenu>
 
 #include "ui_mainwindow.h"
 #include "cryptographer.h"
@@ -31,7 +34,7 @@
 
 #define RECV_BUFFER_SIZE 4096
 
-enum Command { kCreateNew, kDelete, kWrite, kRead, kSaveAll, kLoadAll, kGetActualNoteList, kGetNoteTypeInfo };
+enum Command { kCreateNew, kDelete, kWrite, kRead, kSaveAll, kLoadAll, kGetActualNoteList, kGetNoteTypeInfo, kChangeType };
 enum NoteType { kShared = 0, kEncrypted, kSpecialEncrypted };
 
 class MainWindow : public QMainWindow
@@ -39,6 +42,7 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
+    friend class NoteWindow;
     MainWindow(QWidget* parent = nullptr);
     ~MainWindow();
 
@@ -55,6 +59,8 @@ private:
 
     void UpdateNoteList();
 
+    NoteType GetNoteTypeInfo(string note_name);
+
     Ui::MainWindowClass ui;
     Cryptographer crypt_;
     SOCKET socket_;
@@ -62,13 +68,21 @@ private:
         login_, password_,
         error_message_;
 
+    QWidget* window_;
+    QLineEdit* line_edit1_, *line_edit2_;
+    QFormLayout* layout_;
+    QPushButton* button_;
+    QTextEdit* text_edit_;
+    QComboBox* combo_box_;
+    QLabel* label_;
+
 public slots:
     void LoadAllNotes();
     void SaveAllNotes();
     void CreateNewNote();
-    void DeleteNote();
-    void ReadNote();
-    void WriteNote();
+    void DeleteNote(string note_name);
+    void ChangeType(string note_name);
     void OpenNote(QListWidgetItem* item);
+    void ShowNoteMenu(const QPoint& pos);
 };
 

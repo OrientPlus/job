@@ -3,7 +3,6 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include <set>
 #include <algorithm>
 #include <fstream>
 #include <sstream>
@@ -21,7 +20,6 @@ using std::string;
 using std::endl;
 using std::cout;
 using std::cin;
-using std::set;
 using std::fstream;
 using std::stringstream;
 
@@ -77,6 +75,17 @@ public:
 	{
 		return data_.size() > other.data_.size();
 	}
+	/*Note operator=(const Note& other) const
+	{
+		Note new_note;
+		new_note.name_ = other.name_;
+		new_note.password_ = other.password_;
+		new_note.owner_name_ = other.owner_name_;
+		new_note.type_ = other.type_;
+		new_note.data_ = other.data_;
+
+		return new_note;
+	}*/
 	string name_, password_, owner_name_, data_;
 	int type_;
 };
@@ -90,12 +99,13 @@ public:
 private:
 	friend class NotesManager;
 	int InitializationRights();
-	bool CheckRights(Note _note, string password);
-	bool SetRights(Note _note);
-	bool DeleteRights(Note _note);
+	bool CheckRights(vector<Note>::iterator note_it, string password);
+	int SetRights(Note _note);
+	bool DeleteRights(vector<Note>::iterator note_it);
 	int SaveAllData();
-	set<Note>::iterator FindNote(string name);
+	vector<Note>::iterator FindNote(string name);
 	string GetNoteList();
+	int ChangeNoteType(vector<Note>::iterator note_it, NoteType new_type, string pass);
 
 	int CheckingUserData(const User user);
 	bool IsAuthorized(const User user);
@@ -103,8 +113,8 @@ private:
 	int UserIsLoggedOut(const User user);
 
 	
-	set<Note> access_table_;
-	set<User> authorized_users_;
-	set<User> users_table_;
+	vector<Note> access_table_;
+	vector<User> authorized_users_;
+	vector<User> users_table_;
 	string internal_key;
 };

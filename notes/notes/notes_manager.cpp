@@ -181,11 +181,12 @@ int NotesManager::ExecuteCommand()
 int NotesManager::ParsCommand(User user, string &data)
 {
     stringstream ss(data);
-    string command, arg1, arg2, key;
+    string command, arg1, arg2, key, temp_str;
     ss >> command;
     
+    vector<Note>::iterator note_iterator;
     Note note;
-    NoteType nt;
+    NoteType type, new_type;
     int switch_on = std::stoi(command);
     switch (switch_on)
     {
@@ -196,8 +197,8 @@ int NotesManager::ParsCommand(User user, string &data)
         if (arg1.empty() or arg2.empty())
             return -1;
 
-        nt = static_cast<NoteType>(stoi(arg2));
-        if (nt == kSpecialEncrypted)
+        type = static_cast<NoteType>(stoi(arg2));
+        if (type == kSpecialEncrypted)
         {
             ss >> key;
             if (key.empty())
@@ -207,7 +208,7 @@ int NotesManager::ParsCommand(User user, string &data)
             key = user.password_;
 
         // Создаем заметку
-        note = CreateNote(arg1, nt, key, user.login_);
+        CreateNote(arg1, type, key, user.login_);
 
         data = "0";
         return 0;
@@ -217,25 +218,30 @@ int NotesManager::ParsCommand(User user, string &data)
         ss >> arg1;
         if (arg1.empty())
             return -1;
+        
+        note_iterator = access_rights_.FindNote(arg1);
+        if (note_iterator == access_rights_.access_table_.end())
         {
-            auto note_it = access_rights_.FindNote(arg1);
-            if (note_it == access_rights_.access_table_.end())
-                return -1;
-            note = *note_it;
+            data = "A note with that name does not exist!";
+            return 0;
         }
+
         key.clear();
         if (note.type_ == kSpecialEncrypted)
         {
             ss >> key;
             if (key.empty())
-                return -1;
+            {
+                data = "Invalid special password!";
+                return 0;
+            }
         }
         else if (note.type_ == kEncrypted)
             key = user.password_;
 
-        if (access_rights_.CheckRights(note, key))
+        if (access_rights_.CheckRights(note_iterator, key))
         {
-            DeleteNote(note);
+            DeleteNote(note_iterator);
             data = "0";
         }
         else
@@ -247,30 +253,30 @@ int NotesManager::ParsCommand(User user, string &data)
         ss >> arg1;
         if (arg1.empty())
             return -1;
+
+        note_iterator = access_rights_.FindNote(arg1);
+        if (note_iterator == access_rights_.access_table_.end())
         {
-            auto note_it = access_rights_.FindNote(arg1);
-            if (note_it == access_rights_.access_table_.end())
-                return -1;
-            note = *note_it;
+            data = "A note with that name does not exist!";
+            return 0;
         }
 
         key.clear();
-        if (note.type_ == kSpecialEncrypted)
+        if (note_iterator->type_ == kSpecialEncrypted)
         {
             ss >> key;
             if (key.empty())
                 return -1;
         }
-        else if (note.type_ == kEncrypted)
+        else if (note_iterator->type_ == kEncrypted)
             key = user.password_;
         
-        ss >> arg2;
-        if (arg2.empty())
-            return -1;
+        while(ss >> temp_str)
+            arg2 += " " + temp_str;
 
-        if (access_rights_.CheckRights(note, key))
+        if (access_rights_.CheckRights(note_iterator, key))
         {
-            WriteNote(note, arg2);
+            WriteNote(note_iterator, arg2);
             data = "0";
         }
         else
@@ -282,24 +288,26 @@ int NotesManager::ParsCommand(User user, string &data)
         ss >> arg1;
         if (arg1.empty())
             return -1;
+
+        note_iterator = access_rights_.FindNote(arg1);
+        if (note_iterator == access_rights_.access_table_.end())
         {
-            auto note_it = access_rights_.FindNote(arg1);
-            if (note_it == access_rights_.access_table_.end())
-                return -1;
-            note = *note_it;
+            data = "A note with that name does not exist!";
+            return 0;
         }
+
         key.clear();
-        if (note.type_ == kSpecialEncrypted)
+        if (note_iterator->type_ == kSpecialEncrypted)
         {
             ss >> key;
             if (key.empty())
                 return -1;
         }
-        else if (note.type_ == kEncrypted)
+        else if (note_iterator->type_ == kEncrypted)
             key = user.password_;
 
-        if (access_rights_.CheckRights(note, key))
-            data = ReadNote(note);
+        if (access_rights_.CheckRights(note_iterator, key))
+            data = ReadNote(note_iterator);
         else
             data = "Access denied!";
         return 0;
@@ -314,15 +322,60 @@ int NotesManager::ParsCommand(User user, string &data)
     case kLoadAll:
         data = LoadAllNotes();
         return 0;
+    
+    // GET_NOTE_LIST
     case kGetActualNoteList:
         data = GetNoteList();
         return 0;
+
+    // GET_NOTE_TYPE
     case kGetNoteTypeInfo:
         ss >> arg1;
         if (arg1.empty())
             return -1;
         
-        data = GetNoteTypeInfo(arg1);
+        data = std::to_string(GetNoteTypeInfo(arg1));
+        return 0;
+
+
+    case kChangeType:
+        ss >> arg1 >> arg2;
+        if (arg1.empty() or arg2.empty())
+        {
+            data = "Invalid parameters!";
+            return 0;
+        }
+        type = GetNoteTypeInfo(arg1),
+            new_type = static_cast<NoteType>(std::stoi(arg2));
+        if (type == kSpecialEncrypted or new_type == kSpecialEncrypted)
+        {
+            ss >> key;
+            if (key.empty())
+            {
+                data = "Invalid special password!";
+                return 0;
+            }
+        }
+        else
+            key = user.password_;
+
+        note_iterator = access_rights_.FindNote(arg1);
+        if (note_iterator == access_rights_.access_table_.end())
+        {
+            data = "A note with that name does not exist!";
+            return 0;
+        }
+
+        int ch_value;
+        if (access_rights_.CheckRights(note_iterator, key))
+            ch_value = access_rights_.ChangeNoteType(note_iterator, new_type, key);
+        else
+        {
+            data = "Access denied!";
+            return 0;
+        }
+
+        ch_value == 0 ? data = "0" : data = "Change rejected!";
         return 0;
 
     default:
@@ -389,20 +442,20 @@ Note NotesManager::CreateNote(string name, NoteType type, string key, string own
     return note;
 }
 
-int NotesManager::DeleteNote(Note &note)
+int NotesManager::DeleteNote(vector<Note>::iterator note_it)
 {
-    access_rights_.DeleteRights(note);
+    access_rights_.DeleteRights(note_it);
     return 0;
 }
 
-string NotesManager::ReadNote(Note &note)
+string NotesManager::ReadNote(vector<Note>::iterator note_it)
 {
-    return note.data_;
+    return note_it->data_;
 }
 
-int NotesManager::WriteNote(Note& note, string data)
+int NotesManager::WriteNote(vector<Note>::iterator note_it, string data)
 {
-    note.data_ = data;
+    note_it->data_ = data;
     return 0;
 }
 
@@ -424,11 +477,11 @@ string NotesManager::GetNoteList()
     return access_rights_.GetNoteList();
 }
 
-string NotesManager::GetNoteTypeInfo(string note_name)
+NoteType NotesManager::GetNoteTypeInfo(string note_name)
 {
     auto note_it = access_rights_.FindNote(note_name);
     if (note_it == access_rights_.access_table_.end())
-        return string{"Note not found"};
+        return kShared;
     
-    return string{ std::to_string(note_it->type_) };
+    return static_cast<NoteType>(note_it->type_);
 }

@@ -23,7 +23,7 @@ using std::vector;
 using std::lock_guard;
 using std::mutex;
 
-enum Command {kCreateNew, kDelete, kWrite, kRead, kSaveAll, kLoadAll, kGetActualNoteList, kGetNoteTypeInfo};
+enum Command { kCreateNew, kDelete, kWrite, kRead, kSaveAll, kLoadAll, kGetActualNoteList, kGetNoteTypeInfo, kChangeType };
 
 class NotesManager
 {
@@ -40,13 +40,13 @@ private:
     int ExecuteCommand();
     int ParsCommand(User user, string &data);
     Note CreateNote(string name, NoteType type, string key, string owner);
-    int DeleteNote(Note &note);
-    string ReadNote(Note &note);
-    int WriteNote(Note &note, string data);
+    int DeleteNote(vector<Note>::iterator note_it);
+    string ReadNote(vector<Note>::iterator note_it);
+    int WriteNote(vector<Note>::iterator note_it, string data);
     int SaveAllNotes();
     string LoadAllNotes();
     string GetNoteList();
-    string GetNoteTypeInfo(string note_name);
+    NoteType GetNoteTypeInfo(string note_name);
     bool IdentificationClient(User &user, SOCKET user_socket);
 
 

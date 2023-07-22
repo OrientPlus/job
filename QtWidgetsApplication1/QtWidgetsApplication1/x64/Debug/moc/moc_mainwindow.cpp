@@ -22,8 +22,8 @@ QT_BEGIN_MOC_NAMESPACE
 QT_WARNING_PUSH
 QT_WARNING_DISABLE_DEPRECATED
 struct qt_meta_stringdata_MainWindow_t {
-    QByteArrayData data[11];
-    char stringdata0[113];
+    QByteArrayData data[14];
+    char stringdata0[139];
 };
 #define QT_MOC_LITERAL(idx, ofs, len) \
     Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
@@ -38,17 +38,21 @@ QT_MOC_LITERAL(2, 24, 0), // ""
 QT_MOC_LITERAL(3, 25, 12), // "SaveAllNotes"
 QT_MOC_LITERAL(4, 38, 13), // "CreateNewNote"
 QT_MOC_LITERAL(5, 52, 10), // "DeleteNote"
-QT_MOC_LITERAL(6, 63, 8), // "ReadNote"
-QT_MOC_LITERAL(7, 72, 9), // "WriteNote"
-QT_MOC_LITERAL(8, 82, 8), // "OpenNote"
-QT_MOC_LITERAL(9, 91, 16), // "QListWidgetItem*"
-QT_MOC_LITERAL(10, 108, 4) // "item"
+QT_MOC_LITERAL(6, 63, 6), // "string"
+QT_MOC_LITERAL(7, 70, 9), // "note_name"
+QT_MOC_LITERAL(8, 80, 10), // "ChangeType"
+QT_MOC_LITERAL(9, 91, 8), // "OpenNote"
+QT_MOC_LITERAL(10, 100, 16), // "QListWidgetItem*"
+QT_MOC_LITERAL(11, 117, 4), // "item"
+QT_MOC_LITERAL(12, 122, 12), // "ShowNoteMenu"
+QT_MOC_LITERAL(13, 135, 3) // "pos"
 
     },
     "MainWindow\0LoadAllNotes\0\0SaveAllNotes\0"
-    "CreateNewNote\0DeleteNote\0ReadNote\0"
-    "WriteNote\0OpenNote\0QListWidgetItem*\0"
-    "item"
+    "CreateNewNote\0DeleteNote\0string\0"
+    "note_name\0ChangeType\0OpenNote\0"
+    "QListWidgetItem*\0item\0ShowNoteMenu\0"
+    "pos"
 };
 #undef QT_MOC_LITERAL
 
@@ -69,19 +73,19 @@ static const uint qt_meta_data_MainWindow[] = {
        1,    0,   49,    2, 0x0a /* Public */,
        3,    0,   50,    2, 0x0a /* Public */,
        4,    0,   51,    2, 0x0a /* Public */,
-       5,    0,   52,    2, 0x0a /* Public */,
-       6,    0,   53,    2, 0x0a /* Public */,
-       7,    0,   54,    2, 0x0a /* Public */,
+       5,    1,   52,    2, 0x0a /* Public */,
        8,    1,   55,    2, 0x0a /* Public */,
+       9,    1,   58,    2, 0x0a /* Public */,
+      12,    1,   61,    2, 0x0a /* Public */,
 
  // slots: parameters
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
-    QMetaType::Void,
-    QMetaType::Void,
-    QMetaType::Void,
-    QMetaType::Void, 0x80000000 | 9,   10,
+    QMetaType::Void, 0x80000000 | 6,    7,
+    QMetaType::Void, 0x80000000 | 6,    7,
+    QMetaType::Void, 0x80000000 | 10,   11,
+    QMetaType::Void, QMetaType::QPoint,   13,
 
        0        // eod
 };
@@ -95,10 +99,10 @@ void MainWindow::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, 
         case 0: _t->LoadAllNotes(); break;
         case 1: _t->SaveAllNotes(); break;
         case 2: _t->CreateNewNote(); break;
-        case 3: _t->DeleteNote(); break;
-        case 4: _t->ReadNote(); break;
-        case 5: _t->WriteNote(); break;
-        case 6: _t->OpenNote((*reinterpret_cast< QListWidgetItem*(*)>(_a[1]))); break;
+        case 3: _t->DeleteNote((*reinterpret_cast< string(*)>(_a[1]))); break;
+        case 4: _t->ChangeType((*reinterpret_cast< string(*)>(_a[1]))); break;
+        case 5: _t->OpenNote((*reinterpret_cast< QListWidgetItem*(*)>(_a[1]))); break;
+        case 6: _t->ShowNoteMenu((*reinterpret_cast< const QPoint(*)>(_a[1]))); break;
         default: ;
         }
     }

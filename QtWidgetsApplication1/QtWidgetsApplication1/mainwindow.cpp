@@ -9,10 +9,13 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui.SaveAllNotes, &QPushButton::clicked, this, &MainWindow::SaveAllNotes);
     connect(ui.actionCreate_new_note, &QAction::triggered, this, &MainWindow::CreateNewNote);
     connect(ui.listWidget, &QListWidget::itemDoubleClicked, this, &MainWindow::OpenNote);
+    ui.listWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(ui.listWidget, &QListWidget::customContextMenuRequested, this, &MainWindow::ShowNoteMenu);
 
     port_ = "8888";
     ip_address_ = "localhost";
 }
+
 
 MainWindow::~MainWindow()
 {}
@@ -125,30 +128,29 @@ bool MainWindow::Authorization()
 
     // 3. Получаем от клиента логин и пароль
     // Создаем основное окно
-    QWidget* window = new QWidget();
-    window->setWindowTitle("Authorization");
+    window_ = new QWidget();
+    window_->setWindowTitle("Authorization");
 
     // Создаем поля для ввода данных и кнопку
-    QLineEdit* login_edit = new QLineEdit();
-    QLineEdit* password_edit = new QLineEdit();
-    password_edit->setEchoMode(QLineEdit::Password); // Скрываем вводимые символы
-    QPushButton* send_button = new QPushButton("Send");
+    line_edit1_ = new QLineEdit();
+    line_edit2_ = new QLineEdit();
+    line_edit2_->setEchoMode(QLineEdit::Password); // Скрываем вводимые символы
+    button_ = new QPushButton("Send");
 
     // Создаем макет и добавляем наши виджеты в него
-    QFormLayout* layout = new QFormLayout();
-    layout->addRow("Login:", login_edit);
-    layout->addRow("Password:", password_edit);
-    layout->addWidget(send_button);
+    layout_ = new QFormLayout();
+    layout_->addRow("Login:", line_edit1_);
+    layout_->addRow("Password:", line_edit2_);
+    layout_->addWidget(button_);
 
-    window->setLayout(layout);
+    window_->setLayout(layout_);
 
     bool auth = false;
     QEventLoop loop;
-    // Связываем кнопку с обработкой введенных данных
-    QObject::connect(send_button, &QPushButton::clicked, &loop, [&]() {
-        QString login = login_edit->text();
-        QString password = password_edit->text();
-        
+    QObject::connect(button_, &QPushButton::clicked, &loop, [&]() {
+        QString login = line_edit1_->text();
+        QString password = line_edit2_->text();
+
         login_ = login.toStdString();
         password_ = password.toStdString();
 
@@ -167,18 +169,24 @@ bool MainWindow::Authorization()
             auth = false;
         }
 
-        window->close();
+        window_->close();
         });
 
-    window->show();
+    window_->show();
     loop.exec();
+
+    delete line_edit1_;
+    delete line_edit2_;
+    delete button_;
+    delete layout_;
+    delete window_;
 
     return auth;
 }
 
 void MainWindow::SaveAllNotes()
 {
-    string command = std::to_string(kSaveAll);
+    string command = std::to_string(static_cast<int>(kSaveAll));
     command = crypt_.AesEncryptData(command, password_);
     SendData(command);
 
@@ -196,46 +204,64 @@ void MainWindow::SaveAllNotes()
 
 void MainWindow::LoadAllNotes()
 {
+    string command = std::to_string(static_cast<int>(kLoadAll));
+    command = crypt_.AesEncryptData(command, password_);
+    SendData(command);
+    command = RecvData();
+    command = crypt_.AesDecryptData(command, password_);
+    
+    // Парсим полученный список заметок
+    std::vector<string> note_names;
+    std::stringstream ss(command);
+    while (ss >> command)
+        note_names.push_back(command);
+
+    ui.listWidget->clear();
+    // Добавляем записи в виджет заметок
+    for (auto it : note_names)
+        ui.listWidget->addItem(QString::fromStdString(it));
+
+    ui.listWidget->update();
 
 }
 
 void MainWindow::CreateNewNote()
 {
-    string command = std::to_string(kCreateNew);
-
+    string command;
     // Создаем окно для ввода параметров заметки
-    QWidget* window = new QWidget();
-    window->setWindowTitle("Creating a note");
+    window_ = new QWidget();
+    window_->setWindowTitle("Creating a note");
 
     // Создаем поля для ввода данных и кнопку
-    QLineEdit* name_edit = new QLineEdit();
-    QLineEdit* special_password_edit = new QLineEdit();
-    QComboBox* type_box = new QComboBox();
-    type_box->addItem(QString{ "Shared" }, QString{ "0" });
-    type_box->addItem(QString{ "Def. Encrypt" }, QString{ "1" });
-    type_box->addItem(QString{ "Spec. Encrypt" }, QString{ "2" });
-    QPushButton* create_button = new QPushButton("Create");
+    line_edit1_ = new QLineEdit();
+    line_edit2_ = new QLineEdit();
+    line_edit2_->setEchoMode(QLineEdit::Password);
+    combo_box_ = new QComboBox();
+    combo_box_->addItem(QString{ "Shared" }, QString{ "0" });
+    combo_box_->addItem(QString{ "Def. Encrypt" }, QString{ "1" });
+    combo_box_->addItem(QString{ "Spec. Encrypt" }, QString{ "2" });
+    button_ = new QPushButton("Create");
 
     // Создаем макет и добавляем наши виджеты в него
-    QFormLayout* layout = new QFormLayout();
-    layout->addRow("Name:", name_edit);
-    layout->addWidget(type_box);
-    layout->addRow("Special password:", special_password_edit);
-    layout->addWidget(create_button);
+    layout_ = new QFormLayout();
+    layout_->addRow("Name:", line_edit1_);
+    layout_->addWidget(combo_box_);
+    layout_->addRow("Special password:", line_edit2_);
+    layout_->addWidget(button_);
 
-    window->setLayout(layout);
+    window_->setLayout(layout_);
 
     // Кнопка "create"
     QEventLoop loop;
-    QObject::connect(create_button, &QPushButton::clicked, &loop, [&]() {
-        QString name = name_edit->text();
-        NoteType type = static_cast<NoteType>(type_box->currentIndex());
+    connect(button_, &QPushButton::clicked, &loop, [&]() {
+        command = std::to_string(static_cast<int>(kCreateNew));
+        string note_name = line_edit1_->text().toStdString();
+        NoteType type = static_cast<NoteType>(combo_box_->currentIndex());
 
-        string note_name = name.toStdString(),
-            send_command = command + " " + note_name + " " + std::to_string(type);
+        string send_command = command + " " + note_name + " " + std::to_string(static_cast<int>(type));
         if (type == kSpecialEncrypted)
         {
-            send_command += " " + special_password_edit->text().toStdString();
+            send_command += " " + line_edit2_->text().toStdString();
         }
 
         // Шифруем данные, отправляем на сервер и получаем ответ
@@ -249,31 +275,199 @@ void MainWindow::CreateNewNote()
 
         // Обновляем отображаемый список заметок
         UpdateNoteList();
-        window->close();
+        window_->close();
+        });
+    window_->show();
+    loop.exec();
+
+    delete window_;
+    delete line_edit1_;
+    delete line_edit2_;
+    delete combo_box_;
+    delete layout_;
+
+    return;
+}
+
+void MainWindow::DeleteNote(string note_name)
+{
+    string command = std::to_string(static_cast<int>(kDelete)) + " " + note_name,
+        key;
+    NoteType type = GetNoteTypeInfo(note_name);
+
+    if (type == kSpecialEncrypted)
+    {
+        // Создаем основное окно
+        window_ = new QWidget();
+        window_->setWindowTitle("Special password");
+
+        // Создаем поля для ввода данных и кнопку
+        line_edit1_ = new QLineEdit();
+        line_edit1_->setEchoMode(QLineEdit::Password); // Скрываем вводимые символы
+        button_ = new QPushButton("Send");
+
+        // Создаем макет и добавляем наши виджеты в него
+        layout_ = new QFormLayout();
+        layout_->addRow("Password:", line_edit1_);
+        layout_->addWidget(button_);
+
+        window_->setLayout(layout_);
+        QEventLoop loop;
+        // Связываем кнопку с обработкой введенных данных
+        QObject::connect(button_, &QPushButton::clicked, &loop, [&]() {
+            key = line_edit1_->text().toStdString();
+            window_->close();
+            });
+
+        window_->show();
+        loop.exec();
+
+        if (key.empty())
+            return;
+        command += " " + key;
+
+        delete line_edit1_;
+        delete line_edit2_;
+        delete button_;
+        delete layout_;
+        delete window_;
+    }
+    
+    command = crypt_.AesEncryptData(command, password_);
+    SendData(command);
+    command = RecvData();
+    command = crypt_.AesDecryptData(command, password_);
+    if (command != "0")
+        Message(command);
+
+    UpdateNoteList();
+}
+
+void MainWindow::ChangeType(string note_name)
+{
+    // Получаем тип заметки
+    string command = std::to_string(static_cast<int>(kChangeType)) + " " + note_name,
+        key;
+    NoteType type = GetNoteTypeInfo(note_name);
+
+    // Если заметка закрыта спец.паролем, запрашиваем его у юзера
+    if (type == kSpecialEncrypted)
+    {
+        // Создаем основное окно
+        window_ = new QWidget();
+        window_->setWindowTitle("Special password");
+
+        // Создаем поля для ввода данных и кнопку
+        line_edit1_ = new QLineEdit();
+        line_edit1_->setEchoMode(QLineEdit::Password); // Скрываем вводимые символы
+        button_ = new QPushButton("Send");
+
+        // Создаем макет и добавляем наши виджеты в него
+        layout_ = new QFormLayout();
+        layout_->addRow("Password:", line_edit1_);
+        layout_->addWidget(button_);
+
+        window_->setLayout(layout_);
+        QEventLoop loop;
+        // Связываем кнопку с обработкой введенных данных
+        QObject::connect(button_, &QPushButton::clicked, &loop, [&]() {
+            key = line_edit1_->text().toStdString();
+            window_->close();
+            loop.exit();
+            });
+
+        window_->show();
+        loop.exec();
+
+        delete line_edit1_;
+        delete button_;
+        delete layout_;
+        delete window_;
+
+        if (key.empty())
+            return;
+    }
+
+    // Выводим окно с меню выбора типа заметки
+    // Создаем окно для ввода параметров заметки
+    window_ = new QWidget();
+    window_->setWindowTitle("Change note type");
+
+    // Создаем поля для ввода данных и кнопку
+    label_ = new QLabel(QString::fromStdString(note_name));
+    line_edit1_ = new QLineEdit();
+    line_edit1_->setEchoMode(QLineEdit::Password);
+    combo_box_ = new QComboBox();
+    combo_box_->addItem(QString{ "Shared" }, QString{ "0" });
+    combo_box_->addItem(QString{ "Def. Encrypt" }, QString{ "1" });
+    combo_box_->addItem(QString{ "Spec. Encrypt" }, QString{ "2" });
+    button_ = new QPushButton("Send");
+
+    // Создаем макет и добавляем наши виджеты в него
+    layout_ = new QFormLayout();
+    layout_->addWidget(label_);
+    layout_->addWidget(combo_box_);
+    layout_->addRow("Special password:", line_edit1_);
+    layout_->addWidget(button_);
+    window_->setLayout(layout_);
+
+    // Кнопка "send"
+    QEventLoop loop;
+    QObject::connect(button_, &QPushButton::clicked, &loop, [&]() {
+        command = std::to_string(static_cast<int>(kChangeType));
+        NoteType new_type = static_cast<NoteType>(combo_box_->currentIndex());
+
+        string send_command = command + " " + note_name + " " + std::to_string(static_cast<int>(new_type));
+        if (new_type == kSpecialEncrypted)
+            send_command += " " + line_edit1_->text().toStdString();
+        if (type == kSpecialEncrypted)
+            send_command += " " + key;
+
+        // Шифруем данные, отправляем на сервер и получаем ответ
+        string encrypted_data = crypt_.AesEncryptData(send_command, password_);
+        SendData(encrypted_data);
+        encrypted_data = RecvData();
+
+        encrypted_data = crypt_.AesDecryptData(encrypted_data, password_);
+        if (encrypted_data != "0")
+            Message(encrypted_data);
+
+        window_->close();
         });
 
-    window->show();
+    window_->show();
     loop.exec();
+
+    delete window_;
+    delete label_;
+    delete line_edit1_;
+    delete combo_box_;
+    delete button_;
+    delete layout_;
 }
 
-void MainWindow::ReadNote()
+void MainWindow::ShowNoteMenu(const QPoint& pos)
 {
+    QListWidgetItem* item = ui.listWidget->itemAt(pos);
+    if (!item)
+        return;
 
-}
+    // Получаем позицию клика и преобразуем ее в глобальные координаты
+    QPoint globalPos = ui.listWidget->mapToGlobal(pos);
 
-void MainWindow::WriteNote()
-{
+    // Создаем контекстное меню
+    QMenu contextMenu;
+    contextMenu.addAction("Delete note", std::bind(&MainWindow::DeleteNote, this, item->text().toStdString()));
+    contextMenu.addAction("Chenge type", std::bind(&MainWindow::ChangeType, this, item->text().toStdString()));
 
-}
 
-void MainWindow::DeleteNote()
-{
-
+    // Отображаем контекстное меню в указанной позиции
+    contextMenu.exec(globalPos);
 }
 
 void MainWindow::UpdateNoteList()
 {
-    string command = std::to_string(kGetActualNoteList);
+    string command = std::to_string(static_cast<int>(kGetActualNoteList));
 
     command = crypt_.AesEncryptData(command, password_);
 
@@ -288,6 +482,8 @@ void MainWindow::UpdateNoteList()
     while (ss >> command)
         note_names.push_back(command);
 
+    ui.listWidget->clear();
+
     // Добавляем записи в виджет заметок
     for(auto it : note_names)
         ui.listWidget->addItem(QString::fromStdString(it));
@@ -298,45 +494,49 @@ void MainWindow::UpdateNoteList()
 void MainWindow::OpenNote(QListWidgetItem* item)
 {
     // Получаем тип заметки
-    string command = std::to_string(kGetNoteTypeInfo);
-    command = crypt_.AesEncryptData(command, password_);
-    SendData(command);
-    command = RecvData();
-    string type_str = crypt_.AesDecryptData(command, password_);
-    NoteType type = static_cast<NoteType>(std::stoi(type_str));
+    NoteType type = GetNoteTypeInfo(item->text().toStdString());
 
     string special_password;
     if (type == kSpecialEncrypted)
     {
         // Создаем окно для запроса специального пароля
-        QWidget* window = new QWidget();
-        window->setWindowTitle("Creating a note");
+        window_ = new QWidget();
+        window_->setWindowTitle("Creating a note");
 
         // Создаем поля для ввода данных и кнопку
-        QLineEdit* special_password_edit = new QLineEdit();
-        special_password_edit->setEchoMode(QLineEdit::PasswordEchoOnEdit);
+        line_edit1_ = new QLineEdit();
+        line_edit1_->setEchoMode(QLineEdit::Password);
 
-        QPushButton* send_button = new QPushButton("Send");
+        button_ = new QPushButton("Send");
 
         // Создаем макет и добавляем наши виджеты в него
-        QFormLayout* layout = new QFormLayout();
-        layout->addRow("Special password:", special_password_edit);
-        layout->addWidget(send_button);
+        layout_ = new QFormLayout();
+        layout_->addRow("Special password:", line_edit1_);
+        layout_->addWidget(button_);
 
-        window->setLayout(layout);
+        window_->setLayout(layout_);
 
         QEventLoop loop;
-        QObject::connect(send_button, &QPushButton::clicked, &loop, [&]() {
-            special_password = special_password_edit->text().toStdString();
-            window->close();
+        QObject::connect(button_, &QPushButton::clicked, &loop, [&]() {
+            special_password = line_edit1_->text().toStdString();
+            window_->close();
+            loop.exit();
             });
 
-        window->show();
+        window_->show();
         loop.exec();
+
+        delete line_edit1_;
+        delete button_;
+        delete layout_;
+        delete window_;
+
+        if (special_password.empty())
+            Message("Empty special passwod!");
     }
 
     // Формируем запрос к серверу, отправляем, получаем ответ
-    command = std::to_string(kRead) + " " + item->text().toStdString();
+    string command = std::to_string(static_cast<int>(kRead)) + " " + item->text().toStdString();
     type == kSpecialEncrypted ? command += " " + special_password : command;
     
     command = crypt_.AesEncryptData(command, password_);
@@ -350,29 +550,26 @@ void MainWindow::OpenNote(QListWidgetItem* item)
     }
 
     // Если доступ разрешен, создаем окно заметки
-    QWidget* note_window = new QWidget();
-    note_window->resize(200, 800);
-    QTextEdit* text_edit = new QTextEdit();
-    QPushButton* save_button = new QPushButton("Save"),
-        *clear_button = new QPushButton("Clear");
+    window_ = new QWidget();
+    window_->resize(300, 500);
+    text_edit_ = new QTextEdit();
+    button_ = new QPushButton("Write");
 
-    text_edit->setPlainText(QString::fromStdString(command));
-    setCentralWidget(text_edit);
-    QFormLayout* layout = new QFormLayout();
-    layout->addRow(text_edit);
-    layout->addWidget(save_button);
-    layout->addWidget(clear_button);
+    text_edit_->setPlainText(QString::fromStdString(command));
+    layout_ = new QFormLayout();
+    layout_->addRow(text_edit_);
+    layout_->addWidget(button_);
 
-    note_window->setLayout(layout);
+    window_->setLayout(layout_);
 
-    // Кнопка "save"
-    QObject::connect(save_button, &QPushButton::clicked, [&]() {
+    // Кнопка "Write"
+    QEventLoop loop;
+    QObject::connect(button_, &QPushButton::clicked, &loop, [&]() {
         command = std::to_string(kWrite);
-        string note_data = text_edit->toPlainText().toStdString(),
+        string note_data = text_edit_->toPlainText().toStdString(),
             send_command = command + " " + item->text().toStdString();
 
-        if (type == kSpecialEncrypted)
-            send_command += " " + special_password;
+        send_command += " " + special_password;
 
         send_command += " " + note_data;
 
@@ -384,18 +581,30 @@ void MainWindow::OpenNote(QListWidgetItem* item)
         encrypted_data = crypt_.AesDecryptData(encrypted_data, password_);
         if (encrypted_data != "0")
             Message(encrypted_data);
-
-        //note_window->close();
+        window_->close();
         });
 
-    // Кнопка "clear"
-    QObject::connect(save_button, &QPushButton::clicked, [&]() {
-        text_edit->clear();
-        });
+    window_->show();
+    loop.exec();
 
-    note_window->show();
-
+    delete text_edit_;
+    delete button_;
+    delete layout_;
+    delete window_;
+    
     return;
+}
+
+NoteType MainWindow::GetNoteTypeInfo(string note_name)
+{
+    string command = std::to_string(static_cast<int>(kGetNoteTypeInfo));
+    command += " " + note_name;
+    command = crypt_.AesEncryptData(command, password_);
+    SendData(command);
+    command = RecvData();
+    string type_str = crypt_.AesDecryptData(command, password_);
+
+    return static_cast<NoteType>(std::stoi(type_str));
 }
 
 int MainWindow::Message(string msg)
