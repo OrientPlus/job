@@ -24,6 +24,7 @@
 #include <QPoint>
 #include <QSignalMapper>
 #include <QMenu>
+#include <QCloseEvent>
 
 #include "ui_mainwindow.h"
 #include "cryptographer.h"
@@ -32,9 +33,9 @@
 #pragma comment(lib, "Crypt32.lib")
 #pragma comment (lib, "advapi32")
 
-#define RECV_BUFFER_SIZE 4096
+#define BUFFER_SIZE 8192
 
-enum Command { kCreateNew, kDelete, kWrite, kRead, kSaveAll, kLoadAll, kGetActualNoteList, kGetNoteTypeInfo, kChangeType };
+enum Command { kCreateNew, kDelete, kWrite, kRead, kSaveAll, kLoadAll, kGetActualNoteList, kGetNoteTypeInfo, kChangeType, kLogout };
 enum NoteType { kShared = 0, kEncrypted, kSpecialEncrypted };
 
 class MainWindow : public QMainWindow
@@ -84,5 +85,6 @@ public slots:
     void ChangeType(string note_name);
     void OpenNote(QListWidgetItem* item);
     void ShowNoteMenu(const QPoint& pos);
+    void Logout();
 };
 

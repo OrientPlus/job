@@ -12,6 +12,7 @@
 #include <QtCore/QVariant>
 #include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
+#include <QtWidgets/QGridLayout>
 #include <QtWidgets/QListWidget>
 #include <QtWidgets/QMainWindow>
 #include <QtWidgets/QMenu>
@@ -28,9 +29,12 @@ class Ui_MainWindowClass
 public:
     QAction *actionCreate_new_note;
     QWidget *centralWidget;
-    QPushButton *LoadAllNotes;
-    QPushButton *SaveAllNotes;
+    QWidget *gridLayoutWidget;
+    QGridLayout *gridLayout;
     QListWidget *listWidget;
+    QPushButton *LoadAllNotes;
+    QPushButton *Logout;
+    QPushButton *SaveAllNotes;
     QMenuBar *menuBar;
     QMenu *menuMenu;
     QToolBar *mainToolBar;
@@ -40,7 +44,7 @@ public:
     {
         if (MainWindowClass->objectName().isEmpty())
             MainWindowClass->setObjectName(QString::fromUtf8("MainWindowClass"));
-        MainWindowClass->resize(286, 324);
+        MainWindowClass->resize(276, 368);
         QSizePolicy sizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
         sizePolicy.setHorizontalStretch(0);
         sizePolicy.setVerticalStretch(0);
@@ -52,19 +56,38 @@ public:
         actionCreate_new_note->setObjectName(QString::fromUtf8("actionCreate_new_note"));
         centralWidget = new QWidget(MainWindowClass);
         centralWidget->setObjectName(QString::fromUtf8("centralWidget"));
-        LoadAllNotes = new QPushButton(centralWidget);
-        LoadAllNotes->setObjectName(QString::fromUtf8("LoadAllNotes"));
-        LoadAllNotes->setGeometry(QRect(10, 250, 75, 23));
-        SaveAllNotes = new QPushButton(centralWidget);
-        SaveAllNotes->setObjectName(QString::fromUtf8("SaveAllNotes"));
-        SaveAllNotes->setGeometry(QRect(110, 250, 75, 23));
-        listWidget = new QListWidget(centralWidget);
+        gridLayoutWidget = new QWidget(centralWidget);
+        gridLayoutWidget->setObjectName(QString::fromUtf8("gridLayoutWidget"));
+        gridLayoutWidget->setGeometry(QRect(10, 0, 251, 311));
+        gridLayout = new QGridLayout(gridLayoutWidget);
+        gridLayout->setSpacing(6);
+        gridLayout->setContentsMargins(11, 11, 11, 11);
+        gridLayout->setObjectName(QString::fromUtf8("gridLayout"));
+        gridLayout->setContentsMargins(0, 0, 0, 0);
+        listWidget = new QListWidget(gridLayoutWidget);
         listWidget->setObjectName(QString::fromUtf8("listWidget"));
-        listWidget->setGeometry(QRect(10, 10, 261, 231));
+
+        gridLayout->addWidget(listWidget, 0, 0, 1, 4);
+
+        LoadAllNotes = new QPushButton(gridLayoutWidget);
+        LoadAllNotes->setObjectName(QString::fromUtf8("LoadAllNotes"));
+
+        gridLayout->addWidget(LoadAllNotes, 1, 0, 1, 1);
+
+        Logout = new QPushButton(gridLayoutWidget);
+        Logout->setObjectName(QString::fromUtf8("Logout"));
+
+        gridLayout->addWidget(Logout, 1, 2, 1, 1);
+
+        SaveAllNotes = new QPushButton(gridLayoutWidget);
+        SaveAllNotes->setObjectName(QString::fromUtf8("SaveAllNotes"));
+
+        gridLayout->addWidget(SaveAllNotes, 1, 1, 1, 1);
+
         MainWindowClass->setCentralWidget(centralWidget);
         menuBar = new QMenuBar(MainWindowClass);
         menuBar->setObjectName(QString::fromUtf8("menuBar"));
-        menuBar->setGeometry(QRect(0, 0, 286, 21));
+        menuBar->setGeometry(QRect(0, 0, 276, 21));
         menuMenu = new QMenu(menuBar);
         menuMenu->setObjectName(QString::fromUtf8("menuMenu"));
         MainWindowClass->setMenuBar(menuBar);
@@ -88,6 +111,7 @@ public:
         MainWindowClass->setWindowTitle(QCoreApplication::translate("MainWindowClass", "Note manager", nullptr));
         actionCreate_new_note->setText(QCoreApplication::translate("MainWindowClass", "Create new note", nullptr));
         LoadAllNotes->setText(QCoreApplication::translate("MainWindowClass", "Load all notes", nullptr));
+        Logout->setText(QCoreApplication::translate("MainWindowClass", "Logout/Exit", nullptr));
         SaveAllNotes->setText(QCoreApplication::translate("MainWindowClass", "Save all notes", nullptr));
         menuMenu->setTitle(QCoreApplication::translate("MainWindowClass", "Menu", nullptr));
     } // retranslateUi

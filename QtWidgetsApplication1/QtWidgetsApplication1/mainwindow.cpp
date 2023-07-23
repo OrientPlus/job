@@ -7,32 +7,18 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(ui.LoadAllNotes, &QPushButton::clicked, this, &MainWindow::LoadAllNotes);
     connect(ui.SaveAllNotes, &QPushButton::clicked, this, &MainWindow::SaveAllNotes);
+    connect(ui.Logout, &QPushButton::clicked, this, &MainWindow::Logout);
     connect(ui.actionCreate_new_note, &QAction::triggered, this, &MainWindow::CreateNewNote);
     connect(ui.listWidget, &QListWidget::itemDoubleClicked, this, &MainWindow::OpenNote);
     ui.listWidget->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(ui.listWidget, &QListWidget::customContextMenuRequested, this, &MainWindow::ShowNoteMenu);
+    connect(this, SIGNAL(closeEvent), this, SLOT(Logout));
 
     port_ = "8888";
     ip_address_ = "localhost";
 }
 
-
-MainWindow::~MainWindow()
-{}
-
-void MainWindow::run()
-{
-    if (StartClient() != 0)
-        Message("Error connecting to server!");
-
-    while (true)
-    {
-        if (Authorization())
-            break;
-        else
-            Message(error_message_);
-    }
-}
+MainWindow::~MainWindow() {}
 
 int MainWindow::StartClient()
 {
@@ -40,7 +26,7 @@ int MainWindow::StartClient()
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
     {
-        cout << "Ошибка при инициализации Winsock." << endl;
+        Message("Ошибка при инициализации Winsock.");
         return -1;
     }
 
@@ -48,7 +34,7 @@ int MainWindow::StartClient()
     socket_ = socket(AF_INET, SOCK_STREAM, 0);
     if (socket_ == INVALID_SOCKET)
     {
-        cout << "Ошибка при создании сокета." << endl;
+        Message("Ошибка при создании сокета.");
         WSACleanup();
         return -2;
     }
@@ -63,7 +49,7 @@ int MainWindow::StartClient()
         ip_address_ = "localhost";
     if (getaddrinfo(ip_address_.c_str(), port_.c_str(), &hints, &result) != 0)
     {
-        cout << "Ошибка при разрешении имени хоста." << endl;
+        Message("Ошибка при разрешении имени хоста.");
         closesocket(socket_);
         WSACleanup();
         return -3;
@@ -72,7 +58,8 @@ int MainWindow::StartClient()
     // Подключение к серверу
     if (::connect(socket_, result->ai_addr, static_cast<int>(result->ai_addrlen)) == SOCKET_ERROR)
     {
-        cout << "Ошибка при подключении к серверу." << endl << GetLastError() << "  " << std::system_category().message(GetLastError()) << endl;
+        string error = "Ошибка при подключении к серверу. " + std::system_category().message(GetLastError());
+        Message(error);
         freeaddrinfo(result);
         closesocket(socket_);
         WSACleanup();
@@ -89,34 +76,50 @@ int MainWindow::StopClient()
 {
     closesocket(socket_);
     WSACleanup();
-    cout << "Client stopped." << endl;
 
     return 0;
 }
 
 int MainWindow::SendData(string data)
 {
-    auto ret = send(socket_, data.c_str(), data.size(), 0);
-    if (ret == SOCKET_ERROR)
+    int bytesSent = send(socket_, data.c_str(), static_cast<int>(data.length()), 0);
+    if (bytesSent == SOCKET_ERROR) 
     {
-        cout << "Failed to send data." << endl;
-        return -1;
+        std::cerr << "Ошибка при отправке данных: " << WSAGetLastError() << std::endl;
+        return 0;
     }
-    return ret;
+    return bytesSent;
 }
 
 string MainWindow::RecvData()
 {
-    char buffer[RECV_BUFFER_SIZE];
-    int bytesReceived = recv(socket_, buffer, RECV_BUFFER_SIZE, 0);
-    if (bytesReceived <= 0)
+    char buffer[BUFFER_SIZE];
+
+    int bytes_received = recv(socket_, buffer, BUFFER_SIZE, 0);
+    if (bytes_received == SOCKET_ERROR)
     {
-        cout << "Failed to receive data." << endl;
-        return string{ "Error" };
+        std::cerr << "Ошибка при получении данных: " << WSAGetLastError() << std::endl;
+        return string{"Error"};
+    }
+    return string{ buffer, static_cast<size_t>(bytes_received) };
+}
+
+
+void MainWindow::run()
+{
+    if (StartClient() != 0)
+    {
+        Message("Error connecting to server!");
+        this->close();
     }
 
-    string recv{ &buffer[0], static_cast<size_t>(bytesReceived) };
-    return recv;
+    while (true)
+    {
+        if (Authorization())
+            break;
+        else
+            Message(error_message_);
+    }
 }
 
 bool MainWindow::Authorization()
@@ -170,10 +173,13 @@ bool MainWindow::Authorization()
         }
 
         window_->close();
+        loop.exit();
         });
+
 
     window_->show();
     loop.exec();
+
 
     delete line_edit1_;
     delete line_edit2_;
@@ -186,7 +192,7 @@ bool MainWindow::Authorization()
 
 void MainWindow::SaveAllNotes()
 {
-    string command = std::to_string(static_cast<int>(kSaveAll));
+    string command = std::to_string(kSaveAll);
     command = crypt_.AesEncryptData(command, password_);
     SendData(command);
 
@@ -204,20 +210,18 @@ void MainWindow::SaveAllNotes()
 
 void MainWindow::LoadAllNotes()
 {
-    string command = std::to_string(static_cast<int>(kLoadAll));
+    string command = std::to_string(kLoadAll);
     command = crypt_.AesEncryptData(command, password_);
     SendData(command);
     command = RecvData();
     command = crypt_.AesDecryptData(command, password_);
-    
-    // Парсим полученный список заметок
+
     std::vector<string> note_names;
     std::stringstream ss(command);
     while (ss >> command)
         note_names.push_back(command);
 
     ui.listWidget->clear();
-    // Добавляем записи в виджет заметок
     for (auto it : note_names)
         ui.listWidget->addItem(QString::fromStdString(it));
 
@@ -228,11 +232,10 @@ void MainWindow::LoadAllNotes()
 void MainWindow::CreateNewNote()
 {
     string command;
-    // Создаем окно для ввода параметров заметки
+
     window_ = new QWidget();
     window_->setWindowTitle("Creating a note");
 
-    // Создаем поля для ввода данных и кнопку
     line_edit1_ = new QLineEdit();
     line_edit2_ = new QLineEdit();
     line_edit2_->setEchoMode(QLineEdit::Password);
@@ -242,7 +245,6 @@ void MainWindow::CreateNewNote()
     combo_box_->addItem(QString{ "Spec. Encrypt" }, QString{ "2" });
     button_ = new QPushButton("Create");
 
-    // Создаем макет и добавляем наши виджеты в него
     layout_ = new QFormLayout();
     layout_->addRow("Name:", line_edit1_);
     layout_->addWidget(combo_box_);
@@ -251,14 +253,14 @@ void MainWindow::CreateNewNote()
 
     window_->setLayout(layout_);
 
-    // Кнопка "create"
+    // "create" button
     QEventLoop loop;
     connect(button_, &QPushButton::clicked, &loop, [&]() {
-        command = std::to_string(static_cast<int>(kCreateNew));
+        command = std::to_string(kCreateNew);
         string note_name = line_edit1_->text().toStdString();
         NoteType type = static_cast<NoteType>(combo_box_->currentIndex());
 
-        string send_command = command + " " + note_name + " " + std::to_string(static_cast<int>(type));
+        string send_command = command + " " + note_name + " " + std::to_string(type);
         if (type == kSpecialEncrypted)
         {
             send_command += " " + line_edit2_->text().toStdString();
@@ -276,47 +278,45 @@ void MainWindow::CreateNewNote()
         // Обновляем отображаемый список заметок
         UpdateNoteList();
         window_->close();
+        loop.exit();
         });
     window_->show();
     loop.exec();
 
-    delete window_;
     delete line_edit1_;
     delete line_edit2_;
     delete combo_box_;
     delete layout_;
+    delete window_;
 
     return;
 }
 
 void MainWindow::DeleteNote(string note_name)
 {
-    string command = std::to_string(static_cast<int>(kDelete)) + " " + note_name,
+    string command = std::to_string(kDelete) + " " + note_name,
         key;
     NoteType type = GetNoteTypeInfo(note_name);
 
     if (type == kSpecialEncrypted)
     {
-        // Создаем основное окно
         window_ = new QWidget();
         window_->setWindowTitle("Special password");
 
-        // Создаем поля для ввода данных и кнопку
         line_edit1_ = new QLineEdit();
-        line_edit1_->setEchoMode(QLineEdit::Password); // Скрываем вводимые символы
+        line_edit1_->setEchoMode(QLineEdit::Password);
         button_ = new QPushButton("Send");
 
-        // Создаем макет и добавляем наши виджеты в него
         layout_ = new QFormLayout();
         layout_->addRow("Password:", line_edit1_);
         layout_->addWidget(button_);
 
         window_->setLayout(layout_);
         QEventLoop loop;
-        // Связываем кнопку с обработкой введенных данных
         QObject::connect(button_, &QPushButton::clicked, &loop, [&]() {
             key = line_edit1_->text().toStdString();
             window_->close();
+            loop.exit();
             });
 
         window_->show();
@@ -345,12 +345,10 @@ void MainWindow::DeleteNote(string note_name)
 
 void MainWindow::ChangeType(string note_name)
 {
-    // Получаем тип заметки
-    string command = std::to_string(static_cast<int>(kChangeType)) + " " + note_name,
+    string command = std::to_string(kChangeType) + " " + note_name,
         key;
     NoteType type = GetNoteTypeInfo(note_name);
 
-    // Если заметка закрыта спец.паролем, запрашиваем его у юзера
     if (type == kSpecialEncrypted)
     {
         // Создаем основное окно
@@ -388,12 +386,9 @@ void MainWindow::ChangeType(string note_name)
             return;
     }
 
-    // Выводим окно с меню выбора типа заметки
-    // Создаем окно для ввода параметров заметки
     window_ = new QWidget();
     window_->setWindowTitle("Change note type");
 
-    // Создаем поля для ввода данных и кнопку
     label_ = new QLabel(QString::fromStdString(note_name));
     line_edit1_ = new QLineEdit();
     line_edit1_->setEchoMode(QLineEdit::Password);
@@ -403,7 +398,6 @@ void MainWindow::ChangeType(string note_name)
     combo_box_->addItem(QString{ "Spec. Encrypt" }, QString{ "2" });
     button_ = new QPushButton("Send");
 
-    // Создаем макет и добавляем наши виджеты в него
     layout_ = new QFormLayout();
     layout_->addWidget(label_);
     layout_->addWidget(combo_box_);
@@ -411,13 +405,13 @@ void MainWindow::ChangeType(string note_name)
     layout_->addWidget(button_);
     window_->setLayout(layout_);
 
-    // Кнопка "send"
+    // "send" button
     QEventLoop loop;
     QObject::connect(button_, &QPushButton::clicked, &loop, [&]() {
-        command = std::to_string(static_cast<int>(kChangeType));
+        command = std::to_string(kChangeType);
         NoteType new_type = static_cast<NoteType>(combo_box_->currentIndex());
 
-        string send_command = command + " " + note_name + " " + std::to_string(static_cast<int>(new_type));
+        string send_command = command + " " + note_name + " " + std::to_string(new_type);
         if (new_type == kSpecialEncrypted)
             send_command += " " + line_edit1_->text().toStdString();
         if (type == kSpecialEncrypted)
@@ -433,17 +427,18 @@ void MainWindow::ChangeType(string note_name)
             Message(encrypted_data);
 
         window_->close();
+        loop.exit();
         });
 
     window_->show();
     loop.exec();
 
-    delete window_;
     delete label_;
     delete line_edit1_;
     delete combo_box_;
     delete button_;
     delete layout_;
+    delete window_;
 }
 
 void MainWindow::ShowNoteMenu(const QPoint& pos)
@@ -452,22 +447,18 @@ void MainWindow::ShowNoteMenu(const QPoint& pos)
     if (!item)
         return;
 
-    // Получаем позицию клика и преобразуем ее в глобальные координаты
     QPoint globalPos = ui.listWidget->mapToGlobal(pos);
 
-    // Создаем контекстное меню
     QMenu contextMenu;
     contextMenu.addAction("Delete note", std::bind(&MainWindow::DeleteNote, this, item->text().toStdString()));
-    contextMenu.addAction("Chenge type", std::bind(&MainWindow::ChangeType, this, item->text().toStdString()));
+    contextMenu.addAction("Change type", std::bind(&MainWindow::ChangeType, this, item->text().toStdString()));
 
-
-    // Отображаем контекстное меню в указанной позиции
     contextMenu.exec(globalPos);
 }
 
 void MainWindow::UpdateNoteList()
 {
-    string command = std::to_string(static_cast<int>(kGetActualNoteList));
+    string command = std::to_string(kGetActualNoteList);
 
     command = crypt_.AesEncryptData(command, password_);
 
@@ -476,7 +467,6 @@ void MainWindow::UpdateNoteList()
     command = RecvData();
     command = crypt_.AesDecryptData(command, password_);
 
-    // Парсим полученный список заметок
     std::vector<string> note_names;
     std::stringstream ss(command);
     while (ss >> command)
@@ -484,7 +474,6 @@ void MainWindow::UpdateNoteList()
 
     ui.listWidget->clear();
 
-    // Добавляем записи в виджет заметок
     for(auto it : note_names)
         ui.listWidget->addItem(QString::fromStdString(it));
 
@@ -493,7 +482,6 @@ void MainWindow::UpdateNoteList()
 
 void MainWindow::OpenNote(QListWidgetItem* item)
 {
-    // Получаем тип заметки
     NoteType type = GetNoteTypeInfo(item->text().toStdString());
 
     string special_password;
@@ -535,8 +523,7 @@ void MainWindow::OpenNote(QListWidgetItem* item)
             Message("Empty special passwod!");
     }
 
-    // Формируем запрос к серверу, отправляем, получаем ответ
-    string command = std::to_string(static_cast<int>(kRead)) + " " + item->text().toStdString();
+    string command = std::to_string(kRead) + " " + item->text().toStdString();
     type == kSpecialEncrypted ? command += " " + special_password : command;
     
     command = crypt_.AesEncryptData(command, password_);
@@ -549,7 +536,6 @@ void MainWindow::OpenNote(QListWidgetItem* item)
         return;
     }
 
-    // Если доступ разрешен, создаем окно заметки
     window_ = new QWidget();
     window_->resize(300, 500);
     text_edit_ = new QTextEdit();
@@ -562,7 +548,7 @@ void MainWindow::OpenNote(QListWidgetItem* item)
 
     window_->setLayout(layout_);
 
-    // Кнопка "Write"
+    // "Write" button
     QEventLoop loop;
     QObject::connect(button_, &QPushButton::clicked, &loop, [&]() {
         command = std::to_string(kWrite);
@@ -573,7 +559,6 @@ void MainWindow::OpenNote(QListWidgetItem* item)
 
         send_command += " " + note_data;
 
-        // Шифруем данные, отправляем на сервер и получаем ответ
         string encrypted_data = crypt_.AesEncryptData(send_command, password_);
         SendData(encrypted_data);
         encrypted_data = RecvData();
@@ -582,6 +567,7 @@ void MainWindow::OpenNote(QListWidgetItem* item)
         if (encrypted_data != "0")
             Message(encrypted_data);
         window_->close();
+        loop.exit();
         });
 
     window_->show();
@@ -597,7 +583,7 @@ void MainWindow::OpenNote(QListWidgetItem* item)
 
 NoteType MainWindow::GetNoteTypeInfo(string note_name)
 {
-    string command = std::to_string(static_cast<int>(kGetNoteTypeInfo));
+    string command = std::to_string(kGetNoteTypeInfo);
     command += " " + note_name;
     command = crypt_.AesEncryptData(command, password_);
     SendData(command);
@@ -607,24 +593,29 @@ NoteType MainWindow::GetNoteTypeInfo(string note_name)
     return static_cast<NoteType>(std::stoi(type_str));
 }
 
+void MainWindow::Logout()
+{
+    string command = std::to_string(kLogout);
+    command = crypt_.AesEncryptData(command, password_);
+    SendData(command);
+    StopClient();
+    this->close();
+    return;
+}
+
 int MainWindow::Message(string msg)
 {
-    // Создаем диалоговое окно
     QDialog dialog;
     dialog.setWindowTitle("Error message");
 
-    // Создаем label и устанавливаем текст
     QLabel label;
     label.setText(QString::fromStdString(msg));
 
-    // Создаем вертикальный макет и добавляем label в него
     QVBoxLayout layout;
     layout.addWidget(&label);
 
-    // Устанавливаем макет в окно
     dialog.setLayout(&layout);
 
-    // Показываем окно
     dialog.exec();
     return 0;
 }

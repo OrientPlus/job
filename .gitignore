@@ -67,7 +67,6 @@ dkms.conf
 *.json
 *.vcxproj.*
 *.vcxproj
-*.txt
 *.vsidx
 *.lock
 *.bin

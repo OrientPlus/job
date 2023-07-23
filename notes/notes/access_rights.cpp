@@ -3,8 +3,14 @@
 
 AccessRights::AccessRights()
 {
-	internal_key = "ipPDdFa2365#bfAdFbfBih1u43p459@(&hbdf@hApCSbyu";
+	internal_key_ = "ipPDdFa2365#bfAdFbfBih1u43p459@(&hbdf@hApCSbyu";
 	InitializationRights();
+}
+
+AccessRights::~AccessRights()
+{
+	SaveNotesData();
+	SaveUsersData();
 }
 
 vector<Note>::iterator AccessRights::FindNote(string name)
@@ -19,7 +25,7 @@ string AccessRights::GetNoteList()
 	string note_list;
 
 	for (auto it : access_table_)
-		note_list += it.name_ + "\n";
+		note_list += it.name_ + " ";
 	
 	return note_list;
 }
@@ -29,7 +35,7 @@ int AccessRights::InitializationRights()
 	// Дешифруем данные из json, передаем в json объект
 	Cryptographer crypt;
 	string json_data;
-	json_data = crypt.AesDecryptFile(ACCESS_RIGHTS_FILE_PATH, internal_key);
+	json_data = crypt.AesDecryptFile(ACCESS_RIGHTS_FILE_PATH, internal_key_);
 
 	json source_json;
 
@@ -41,7 +47,8 @@ int AccessRights::InitializationRights()
 		for (const auto& [key, value] : source_json.items())
 		{
 			temp_note.name_ = key;
-			temp_note.type_ = value["type"];
+			string type_str = value["type"];
+			temp_note.type_ = static_cast<NoteType>(std::stoi(type_str));
 			temp_note.owner_name_ = value["owner"];
 			temp_note.data_ = value["data"];
 			temp_note.password_ = value["password"];
@@ -52,7 +59,7 @@ int AccessRights::InitializationRights()
 
 	// Дешифруем данные из json, передаем в json объект
 	json_data.clear();
-	json_data = crypt.AesDecryptFile(USERS_DATA_FILE_PATH, internal_key);
+	json_data = crypt.AesDecryptFile(USERS_DATA_FILE_PATH, internal_key_);
 	if (json_data != "Error")
 	{
 		source_json = json::parse(json_data);
@@ -107,7 +114,7 @@ bool AccessRights::DeleteRights(vector<Note>::iterator note_it)
 	return true;
 }
 
-int AccessRights::SaveAllData()
+int AccessRights::SaveNotesData()
 {
 	// Заполняем json объект
 	Cryptographer crypt;
@@ -122,10 +129,17 @@ int AccessRights::SaveAllData()
 
 	// Конвертируем в строку и передаем шифровщику
 	string json_data = source_json.dump();
-	crypt.AesEncryptFile(USERS_DATA_FILE_PATH, json_data, internal_key);
+	crypt.AesEncryptFile(USERS_DATA_FILE_PATH, json_data, internal_key_);
 
-	source_json.clear();
-	json_data.clear();
+	return 0;
+}
+
+int AccessRights::SaveUsersData()
+{
+	// Заполняем json объект
+	Cryptographer crypt;
+	json source_json;
+
 	// Заполняем json объект
 	for (auto it : access_table_)
 	{
@@ -135,12 +149,12 @@ int AccessRights::SaveAllData()
 		at_json["owner"] = it.owner_name_;
 		at_json["data"] = it.data_;
 		at_json["password"] = it.password_;
+		source_json[it.name_] = at_json;
 	}
 
 	// Конвертируем в строку и передаем шифровщику
-	json_data = source_json.dump();
-	crypt.AesEncryptFile(ACCESS_RIGHTS_FILE_PATH, json_data, internal_key);
-
+	string json_data = source_json.dump();
+	crypt.AesEncryptFile(ACCESS_RIGHTS_FILE_PATH, json_data, internal_key_);
 	return 0;
 }
 

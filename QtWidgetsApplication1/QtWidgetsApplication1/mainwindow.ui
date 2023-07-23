@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>286</width>
-    <height>324</height>
+    <width>276</width>
+    <height>368</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -26,41 +26,41 @@
    <enum>QTabWidget::Rounded</enum>
   </property>
   <widget class="QWidget" name="centralWidget">
-   <widget class="QPushButton" name="LoadAllNotes">
+   <widget class="QWidget" name="gridLayoutWidget">
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>250</y>
-      <width>75</width>
-      <height>23</height>
+      <y>0</y>
+      <width>251</width>
+      <height>311</height>
      </rect>
     </property>
-    <property name="text">
-     <string>Load all notes</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="SaveAllNotes">
-    <property name="geometry">
-     <rect>
-      <x>110</x>
-      <y>250</y>
-      <width>75</width>
-      <height>23</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Save all notes</string>
-    </property>
-   </widget>
-   <widget class="QListWidget" name="listWidget">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>10</y>
-      <width>261</width>
-      <height>231</height>
-     </rect>
-    </property>
+    <layout class="QGridLayout" name="gridLayout">
+     <item row="0" column="0" colspan="4">
+      <widget class="QListWidget" name="listWidget"/>
+     </item>
+     <item row="1" column="0">
+      <widget class="QPushButton" name="LoadAllNotes">
+       <property name="text">
+        <string>Load all notes</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="2">
+      <widget class="QPushButton" name="Logout">
+       <property name="text">
+        <string>Logout/Exit</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QPushButton" name="SaveAllNotes">
+       <property name="text">
+        <string>Save all notes</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </widget>
   </widget>
   <widget class="QMenuBar" name="menuBar">
@@ -68,7 +68,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>286</width>
+     <width>276</width>
      <height>21</height>
     </rect>
    </property>

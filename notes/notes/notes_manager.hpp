@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#include <algorithm>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
@@ -15,15 +16,15 @@
 #define DEFAULT_PORT "8888"
 #define TH_SIZE_MAXIMUM 5
 #define TH_SIZE_MINIMUM 2
-#define RECV_BUFFER_SIZE 4096
-
+#define BUFFER_SIZE 8192
 
 using std::string;
 using std::vector;
 using std::lock_guard;
 using std::mutex;
+using std::min;
 
-enum Command { kCreateNew, kDelete, kWrite, kRead, kSaveAll, kLoadAll, kGetActualNoteList, kGetNoteTypeInfo, kChangeType };
+enum Command { kCreateNew, kDelete, kWrite, kRead, kSaveAll, kLoadAll, kGetActualNoteList, kGetNoteTypeInfo, kChangeType, kLogout };
 
 class NotesManager
 {
@@ -47,15 +48,12 @@ private:
     string LoadAllNotes();
     string GetNoteList();
     NoteType GetNoteTypeInfo(string note_name);
-    bool IdentificationClient(User &user, SOCKET user_socket);
-
+    int IdentificationClient(User &user, SOCKET user_socket);
 
     AccessRights access_rights_;
     Cryptographer crypt_;
-
     mutex mt_;
 
-    // Поля многопотока
     PTP_POOL pool_;
     PTP_CLEANUP_GROUP cleanupgroup_;
     PTP_WORK work_;

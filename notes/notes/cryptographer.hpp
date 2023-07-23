@@ -14,7 +14,7 @@
 #include <cryptopp/filters.h>
 #include <cryptopp/cryptlib.h>
 #include <cryptopp/hex.h>
-#include <cryptopp/pwdbased.h> // Для PKCS5_PBKDF2_HMAC
+#include <cryptopp/pwdbased.h> 
 
 
 using std::fstream;
@@ -31,14 +31,14 @@ class Cryptographer
 {
 public:
 	Cryptographer();
-    // Симметричное шифрование
+    // Symmetric cryptography
 	string AesEncryptData(string data, const string kKey);
 	string AesDecryptData(string data, const string kKey);
 
 	int AesEncryptFile(const string input_filename, const string data, const string key);
 	string AesDecryptFile(const string input_filename, const string key);
 	
-    // Ассиметричное шифрование
+    // Asymmetric Cryptography
     string GenRsaKey();
 	string RsaDecrypt(string data);
     string RsaEncrypt(string data, string key);

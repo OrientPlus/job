@@ -10,7 +10,7 @@ int NotesManager::StartServer()
         return -1;
     }
 
-    SOCKADDR_IN serverAddress, clientAddress;
+    SOCKADDR_IN server_address, client_address;
 
     struct addrinfo* result = nullptr;
     struct addrinfo hints {};
@@ -60,33 +60,57 @@ int NotesManager::StopServer()
     return 0;
 }
 
+//int NotesManager::SendData(SOCKET socket, string data)
+//{
+//    auto ret = send(socket, data.c_str(), data.size(), 0);
+//    if (ret == SOCKET_ERROR)
+//    {
+//        cout << "Failed to send data." << endl;
+//        return -1;
+//    }
+//    return ret;
+//}
+//
+//int NotesManager::RecvData(SOCKET socket, string& data)
+//{
+//    char buffer[RECV_BUFFER_SIZE];
+//    int bytesReceived = recv(socket, buffer, RECV_BUFFER_SIZE, 0);
+//    if (bytesReceived <= 0)
+//    {
+//        lock_guard<mutex> lock(mt_);
+//        cout << "Failed to receive data." << endl;
+//        return -1;
+//    }
+//
+//    data = string{ &buffer[0], static_cast<size_t>(bytesReceived) };
+//
+//    return bytesReceived;
+//}
+
 int NotesManager::SendData(SOCKET socket, string data)
 {
-    auto ret = send(socket, data.c_str(), data.size(), 0);
-    if (ret == SOCKET_ERROR)
+    int bytes_sent = send(socket, data.c_str(), static_cast<int>(data.length()), 0);
+    if (bytes_sent == SOCKET_ERROR) 
     {
-        cout << "Failed to send data." << endl;
-        return -1;
+        std::cerr << "Ошибка при отправке данных: " << WSAGetLastError() << std::endl;
+        return 0;
     }
-    cout << "\nSEND DATA:\n" << data << endl;
-    return ret;
+    return bytes_sent;
 }
 
-int NotesManager::RecvData(SOCKET socket, string &data)
+int NotesManager::RecvData(SOCKET socket, string& data)
 {
-    char buffer[RECV_BUFFER_SIZE];
-    int bytesReceived = recv(socket, buffer, RECV_BUFFER_SIZE, 0);
-    if (bytesReceived <= 0)
+    char buffer[BUFFER_SIZE];
+
+    int bytes_received = recv(socket, buffer, BUFFER_SIZE, 0);
+    if (bytes_received == SOCKET_ERROR)
     {
-        cout << "Failed to receive data." << endl;
-        return -1;
+        std::cerr << "Ошибка при получении данных: " << WSAGetLastError() << std::endl;
+        return 0;
     }
+    data = string{ buffer, static_cast<size_t>(bytes_received) };
 
-    data = string{ &buffer[0], static_cast<size_t>(bytesReceived) };
-
-    cout << "\nRECV DATA:\n" << data << endl;
-
-    return bytesReceived;
+    return bytes_received;
 }
 
 int NotesManager::run()
@@ -118,17 +142,22 @@ int NotesManager::run()
         // Устанавливаем соединение с новым клиентом
         client_socket_ = accept(listen_socket_, nullptr, nullptr);
         if (client_socket_ == INVALID_SOCKET) {
+            lock_guard<mutex> lock(mt_);
             cout << "Failed to accept client connection." << endl;
             closesocket(listen_socket_);
             WSACleanup();
             return -1;
         }
-
-        cout << "Client connected - " << client_socket_ << endl;
+        {
+            lock_guard<mutex> lock(mt_);
+            cout << "Client connected - " << client_socket_ << endl;
+        }
 
         // Выполняем работу в потоке
         SubmitThreadpoolWork(work_);
     }
+
+    StopServer();
 }
 
 VOID NotesManager::ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work)
@@ -146,16 +175,29 @@ int NotesManager::ExecuteCommand()
     // Авторизуем пользователя
     while (true)
     {
-        if (IdentificationClient(user, current_socket))
+        int auth_value = IdentificationClient(user, current_socket);
+        if (auth_value == 1)
             break;
+        else if (auth_value == -1)
+        {
+            closesocket(current_socket);
+            cout << "Client socket close";
+            return -1;
+        }
     }
 
     string requested_command;
     // Выполняем команды в цикле
-    while (true)
+    int cont = 0;
+    while (cont == 0)
     {
         // Получаем и дешфируем данные от юзера
-        RecvData(current_socket, requested_command);
+        if (RecvData(current_socket, requested_command) == -1)
+        {
+            lock_guard<mutex> lock(mt_);
+            cout << "Due to a data acquisition error, the client flow is stopped!\nTHREAD: " << std::this_thread::get_id();
+            return -1;
+        }
 
         {
             lock_guard<mutex> lock(mt_);
@@ -163,23 +205,32 @@ int NotesManager::ExecuteCommand()
         }
         
         // Парсим и выполняем команду
-        ParsCommand(user, requested_command);
+        cont = ParsCommand(user, requested_command);
 
         {
             lock_guard<mutex> lock(mt_);
             requested_command = crypt_.AesEncryptData(requested_command, user.password_);
         }
 
-        SendData(current_socket, requested_command);
+        if (SendData(current_socket, requested_command) == -1)
+        {
+            lock_guard<mutex> lock(mt_);
+            cout << "Due to a data sending error, the client flow is stopped!";
+            return -1;
+        }
     }
 
-    cout << "\nAuth success!";
+    closesocket(current_socket);
+    cout << "Client socket close";
 
     return 0;
 }
 
 int NotesManager::ParsCommand(User user, string &data)
 {
+    // The mutex is captured for the duration of the method!
+    lock_guard<mutex> lock(mt_);
+
     stringstream ss(data);
     string command, arg1, arg2, key, temp_str;
     ss >> command;
@@ -195,14 +246,27 @@ int NotesManager::ParsCommand(User user, string &data)
         // Парсим команду
         ss >> arg1 >> arg2;
         if (arg1.empty() or arg2.empty())
-            return -1;
+        {
+            data = "Invalid argument!";
+            return 0;
+        }
+
+        note_iterator = access_rights_.FindNote(arg1);
+        if (note_iterator != access_rights_.access_table_.end())
+        {
+            data = "A note with that name already exist!";
+            return 0;
+        }
 
         type = static_cast<NoteType>(stoi(arg2));
         if (type == kSpecialEncrypted)
         {
             ss >> key;
             if (key.empty())
-                return -1;
+            {
+                data = "Invalid argument!";
+                return 0;
+            }
         }
         else
             key = user.password_;
@@ -217,7 +281,10 @@ int NotesManager::ParsCommand(User user, string &data)
     case kDelete:
         ss >> arg1;
         if (arg1.empty())
-            return -1;
+        {
+            data = "Invalid argument!";
+            return 0;
+        }
         
         note_iterator = access_rights_.FindNote(arg1);
         if (note_iterator == access_rights_.access_table_.end())
@@ -227,7 +294,7 @@ int NotesManager::ParsCommand(User user, string &data)
         }
 
         key.clear();
-        if (note.type_ == kSpecialEncrypted)
+        if (note_iterator->type_ == kSpecialEncrypted)
         {
             ss >> key;
             if (key.empty())
@@ -236,7 +303,7 @@ int NotesManager::ParsCommand(User user, string &data)
                 return 0;
             }
         }
-        else if (note.type_ == kEncrypted)
+        else if (note_iterator->type_ == kEncrypted)
             key = user.password_;
 
         if (access_rights_.CheckRights(note_iterator, key))
@@ -252,7 +319,10 @@ int NotesManager::ParsCommand(User user, string &data)
     case kWrite:
         ss >> arg1;
         if (arg1.empty())
-            return -1;
+        {
+            data = "Invalid argument!";
+            return 0;
+        }
 
         note_iterator = access_rights_.FindNote(arg1);
         if (note_iterator == access_rights_.access_table_.end())
@@ -266,7 +336,10 @@ int NotesManager::ParsCommand(User user, string &data)
         {
             ss >> key;
             if (key.empty())
-                return -1;
+            {
+                data = "Invalid argument!";
+                return 0;
+            }
         }
         else if (note_iterator->type_ == kEncrypted)
             key = user.password_;
@@ -287,7 +360,10 @@ int NotesManager::ParsCommand(User user, string &data)
     case kRead:
         ss >> arg1;
         if (arg1.empty())
-            return -1;
+        {
+            data = "Invalid argument!";
+            return 0;
+        }
 
         note_iterator = access_rights_.FindNote(arg1);
         if (note_iterator == access_rights_.access_table_.end())
@@ -301,7 +377,10 @@ int NotesManager::ParsCommand(User user, string &data)
         {
             ss >> key;
             if (key.empty())
-                return -1;
+            {
+                data = "Invalid argument!";
+                return 0;
+            }
         }
         else if (note_iterator->type_ == kEncrypted)
             key = user.password_;
@@ -332,12 +411,15 @@ int NotesManager::ParsCommand(User user, string &data)
     case kGetNoteTypeInfo:
         ss >> arg1;
         if (arg1.empty())
-            return -1;
+        {
+            data = "Invalid argument!";
+            return 0;
+        }
         
         data = std::to_string(GetNoteTypeInfo(arg1));
         return 0;
 
-
+    // CHANGE_NOTE_TYPE
     case kChangeType:
         ss >> arg1 >> arg2;
         if (arg1.empty() or arg2.empty())
@@ -367,6 +449,11 @@ int NotesManager::ParsCommand(User user, string &data)
         }
 
         int ch_value;
+        if (note_iterator->owner_name_ != user.login_)
+        {
+            data = "Only the owner can change the type of note!";
+            return 0;
+        }
         if (access_rights_.CheckRights(note_iterator, key))
             ch_value = access_rights_.ChangeNoteType(note_iterator, new_type, key);
         else
@@ -378,6 +465,10 @@ int NotesManager::ParsCommand(User user, string &data)
         ch_value == 0 ? data = "0" : data = "Change rejected!";
         return 0;
 
+    case kLogout:
+        access_rights_.UserIsLoggedOut(user);
+        return -1;
+
     default:
         data = "Unsupported command!";
         return 0;
@@ -386,51 +477,60 @@ int NotesManager::ParsCommand(User user, string &data)
     return 0;
 }
 
-bool NotesManager::IdentificationClient(User &user, SOCKET user_socket)
+int NotesManager::IdentificationClient(User &user, SOCKET user_socket)
 {
     // 1. Генерируем два ключа (секретный и публичный)
-    crypt_.GenRsaKey();
+    {
+        lock_guard<mutex> lock(mt_);
+        crypt_.GenRsaKey();
+    }
 
     // 2. Отправляем публичный ключ клиенту
     if (SendData(user_socket, crypt_.rsa_public_key_string_) == 0)
     {
         cout << "Error sending a message to the client " << user_socket << endl;
-        return false;
+        return -1;
     }
 
-    string data;
+    string data, ed_data;
     // 3. Получаем данные авторизации
     if (RecvData(user_socket, data) == 0)
     {
         cout << "Error receiving data from the client " << user_socket;
-        return false;
+        return -1;
     }
 
-    // 4. Дешифруем приватным ключом
-    string decrypted_text = crypt_.RsaDecrypt(data);
-    cout << "\nDecr user data = " << decrypted_text << endl;
-
-    // 5. Авторизуем/регистрируем клиента
-    user.login_ = decrypted_text.substr(0, decrypted_text.find(' '));
-    user.password_ = decrypted_text.substr(decrypted_text.find(' ') + 1);
-
-    int ret_value = access_rights_.CheckingUserData(user);
-    if (ret_value == -1)
     {
-        SendData(user_socket, "Invalid authorization data!");
-        return false;
-    }
-    else if (ret_value == -10)
-    {
-        SendData(user_socket, "Such a user is already logged in!");
-        return false;
+        lock_guard<mutex> lock(mt_);
+        // 4. Дешифруем приватным ключом
+        string decrypted_text = crypt_.RsaDecrypt(data);
+        string check_disconnect = decrypted_text.substr(0, decrypted_text.find(' '));
+        if (check_disconnect.size() == 1 and std::stoi(check_disconnect) == kLogout)
+            return -1;
+
+        // 5. Авторизуем/регистрируем клиента
+        user.login_ = decrypted_text.substr(0, decrypted_text.find(' '));
+        user.password_ = decrypted_text.substr(decrypted_text.find(' ') + 1);
+
+        int ret_value = access_rights_.CheckingUserData(user);
+        if (ret_value == -1)
+        {
+            SendData(user_socket, crypt_.AesEncryptData("Invalid authorization data!", user.password_));
+            return 0;
+        }
+        else if (ret_value == -10)
+        {
+            SendData(user_socket, crypt_.AesEncryptData("Such a user is already logged in!", user.password_));
+            return 0;
+        }
+
+        access_rights_.UserIsLoggedIn(user);
+        ed_data = crypt_.AesEncryptData("Authorization is successful!", user.password_);
     }
 
-    access_rights_.UserIsLoggedIn(user);
-    string ed_data = crypt_.AesEncryptData("Authorization is successful!", user.password_);
     SendData(user_socket, ed_data);
-
-    return true;
+    access_rights_.SaveUsersData();
+    return 1;
 }
 
 Note NotesManager::CreateNote(string name, NoteType type, string key, string owner)
@@ -461,13 +561,13 @@ int NotesManager::WriteNote(vector<Note>::iterator note_it, string data)
 
 int NotesManager::SaveAllNotes()
 {
-    access_rights_.SaveAllData();
+    access_rights_.SaveNotesData();
     return 0;
 }
 
 string NotesManager::LoadAllNotes()
 {
-    access_rights_.InitializationRights();
+    //access_rights_.InitializationRights();
 
     return access_rights_.GetNoteList();
 }

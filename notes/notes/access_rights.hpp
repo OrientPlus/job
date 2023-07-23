@@ -44,14 +44,6 @@ public:
 	{
 		return login_ > other.login_;
 	}
-	User operator=(const User& other) const
-	{
-		User new_user;
-		new_user.login_ = other.login_;
-		new_user.password_ = other.password_;
-
-		return new_user;
-	}
 	string login_, password_;
 };
 
@@ -75,17 +67,6 @@ public:
 	{
 		return data_.size() > other.data_.size();
 	}
-	/*Note operator=(const Note& other) const
-	{
-		Note new_note;
-		new_note.name_ = other.name_;
-		new_note.password_ = other.password_;
-		new_note.owner_name_ = other.owner_name_;
-		new_note.type_ = other.type_;
-		new_note.data_ = other.data_;
-
-		return new_note;
-	}*/
 	string name_, password_, owner_name_, data_;
 	int type_;
 };
@@ -95,6 +76,7 @@ class AccessRights
 {
 public:
 	AccessRights();
+	~AccessRights();
 
 private:
 	friend class NotesManager;
@@ -102,7 +84,8 @@ private:
 	bool CheckRights(vector<Note>::iterator note_it, string password);
 	int SetRights(Note _note);
 	bool DeleteRights(vector<Note>::iterator note_it);
-	int SaveAllData();
+	int SaveNotesData();
+	int SaveUsersData();
 	vector<Note>::iterator FindNote(string name);
 	string GetNoteList();
 	int ChangeNoteType(vector<Note>::iterator note_it, NoteType new_type, string pass);
@@ -116,5 +99,5 @@ private:
 	vector<Note> access_table_;
 	vector<User> authorized_users_;
 	vector<User> users_table_;
-	string internal_key;
+	string internal_key_;
 };

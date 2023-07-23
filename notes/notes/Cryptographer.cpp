@@ -8,7 +8,6 @@ Cryptographer::Cryptographer()
 }
 
 
-// Шифрует данные указанным ключом с помощью алгоритма AES
 string Cryptographer::AesEncryptData(string data, const string kKey)
 {
     // Генерируем случайную соль
@@ -44,7 +43,6 @@ string Cryptographer::AesEncryptData(string data, const string kKey)
     return encoded_encrypted_data;
 }
 
-// Дешифрует данные указанным ключом с помощью алгоритма AES
 string Cryptographer::AesDecryptData(string data, const string kKey)
 {
     // Декодируем данные из Base64
@@ -73,10 +71,11 @@ string Cryptographer::AesDecryptData(string data, const string kKey)
     return decrypted_data;
 }
 
-// Генерирует пару ключей RSA протокола
-// Конвертирует публичный ключ в строку
 string Cryptographer::GenRsaKey()
 {
+    if (!rsa_public_key_string_.empty())
+        return rsa_public_key_string_;
+
     CryptoPP::AutoSeededRandomPool rng;
 
     private_key_.GenerateRandomWithKeySize(rng, 1024);
@@ -90,7 +89,6 @@ string Cryptographer::GenRsaKey()
     return rsa_public_key_string_;
 }
 
-// Шифрует публичным ключом RSA
 string Cryptographer::RsaEncrypt(string data, string key)
 {
     // 1. Загрузка открытого ключа из строки
@@ -111,7 +109,6 @@ string Cryptographer::RsaEncrypt(string data, string key)
     return encrypted_text;
 }
 
-// Дешифрует приватным RSA ключом
 string Cryptographer::RsaDecrypt(string data)
 {
     if (data.empty())
@@ -125,7 +122,6 @@ string Cryptographer::RsaDecrypt(string data)
     return decrypted_text;
 }
 
-// Шифрует данные указанным ключом и пишет их в файл
 int Cryptographer::AesEncryptFile(const string input_filename, const string data, const string key)
 {
     // Шифрование данных
@@ -149,7 +145,6 @@ int Cryptographer::AesEncryptFile(const string input_filename, const string data
     return 0;
 }
 
-// Дешфрует данные переданным ключом из указанного файла и пишет их в строку
 string Cryptographer::AesDecryptFile(const string input_filename, const string key)
 {
     // Чтение зашифрованных данных из файла
@@ -176,5 +171,5 @@ string Cryptographer::AesDecryptFile(const string input_filename, const string k
     CFB_Mode<AES>::Decryption cfbDecryption((byte*)key.data(), AES::DEFAULT_KEYLENGTH, (byte*)key.data());
     StringSource(cipher_text, true, new StreamTransformationFilter(cfbDecryption, new StringSink(decrypted_data)));
 
-    return cipher_text;
+    return decrypted_data;
 }
