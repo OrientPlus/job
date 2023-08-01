@@ -5,14 +5,16 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+#include <zlib.h>
+
 #pragma comment(lib, "ws2_32.lib")
 #pragma warning(disable:4996)
 
 #define DEFAULT_PORT 8888
-#define DEFAULT_IP "localhost"
-#define BUFFER_SIZE 16
+#define DEFAULT_IP "127.0.0.1"
+#define BUFFER_SIZE 128
 
-enum Command { kCreateNew, kDelete, kWrite, kRead, kExit };
+enum Command { kCreateNew, kDelete, kWrite, kRead, kExit, kAppend, kList };
 
 class FileManager
 {
@@ -23,6 +25,7 @@ private:
 	int StopClient();
 	int SendData(std::string data);
 	int RecvData(std::string &data);
+	unsigned GetCRC32(std::string data);
 
 	std::string ParsCommand();
 	

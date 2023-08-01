@@ -24,7 +24,6 @@ int FileManager::StartServer()
         return INVALID_SOCKET;
     }
 
-    // Создаем сокет
     socket_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (socket_ == INVALID_SOCKET)
     {
@@ -33,12 +32,10 @@ int FileManager::StartServer()
         return INVALID_SOCKET;
     }
 
-    // Задаем адрес сервера, к которому будут подключаться клиенты
     server_addr_.sin_family = AF_INET;
     server_addr_.sin_port = htons(DEFAULT_PORT);
-    server_addr_.sin_addr.s_addr = inet_addr("127.0.0.1");
+    server_addr_.sin_addr.s_addr = inet_addr(DEFAULT_IP);
 
-    // Связываем сокет с адресом сервера
     if (bind(socket_, (struct sockaddr*)&server_addr_, sizeof(server_addr_)) == SOCKET_ERROR)
     {
         std::cerr << "Не удалось связать сокет с адресом сервера.\nError: " << GetLastError() << std::endl;
@@ -60,19 +57,19 @@ int FileManager::StopServer()
     return 0;
 }
 
-int FileManager::SendData(SOCKET socket, string data, sockaddr clientAddr)
+int FileManager::SendData(string data, sockaddr clientAddr) 
 {
     int total_bytes_send = 0, bytes_to_sent, bytes_sent;
 
     // Отправляем размер данных
     bytes_to_sent = htonl(data.size());
-    sendto(socket, reinterpret_cast<char*>(&bytes_to_sent), sizeof(int), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr));
+    sendto(socket_, reinterpret_cast<char*>(&bytes_to_sent), sizeof(int), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr));
 
     // Отправляем данные блоками
     while (total_bytes_send < data.size())
     {
         bytes_to_sent = min(data.size() - total_bytes_send, BUFFER_SIZE);
-        bytes_sent = sendto(socket, data.data(), data.size(), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr));
+        bytes_sent = sendto(socket_, data.data() + total_bytes_send, bytes_to_sent, 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr));
 
         if (bytes_sent == SOCKET_ERROR)
         {
@@ -82,19 +79,28 @@ int FileManager::SendData(SOCKET socket, string data, sockaddr clientAddr)
 
         total_bytes_send += bytes_sent;
     }
+    // Отправляем контрольную сумму
+    unsigned checksum = GetCRC32(data);
+    checksum = htonl(checksum);
+    bytes_sent = sendto(socket_, reinterpret_cast<char*>(&checksum), sizeof(checksum), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr));
+    if (bytes_sent == SOCKET_ERROR)
+    {
+        cerr << "Ошибка отправки данных.\nError: " << GetLastError() << endl;
+        return -1;
+    }
 
     return total_bytes_send;
 }
 
-sockaddr FileManager::RecvData(SOCKET socket, string &data)
+sockaddr FileManager::RecvData(string &data)
 {
     sockaddr client_addr;
     int client_addr_size = sizeof(client_addr), expected_size = 0, bytes_read = 0;
-    char local_buffer[BUFFER_SIZE];
+    char local_buffer[BUFFER_SIZE + 1];
     int bytes_to_receive, total_bytes_received = 0;
 
     // Получаем размер данных
-    bytes_read = recvfrom(socket, reinterpret_cast<char*>(&expected_size), sizeof(expected_size), 0, (struct sockaddr*)&client_addr, &client_addr_size);
+    bytes_read = recvfrom(socket_, reinterpret_cast<char*>(&expected_size), sizeof(expected_size), 0, (struct sockaddr*)&client_addr, &client_addr_size);
     if (bytes_read == SOCKET_ERROR)
     {
         cerr << "Ошибка приема данных.\nError: " << GetLastError() << endl;
@@ -107,10 +113,10 @@ sockaddr FileManager::RecvData(SOCKET socket, string &data)
     while(total_bytes_received < expected_size)
     {
         bytes_to_receive = min(expected_size - total_bytes_received, BUFFER_SIZE);
-        bytes_read = recvfrom(socket, local_buffer, bytes_to_receive, 0, (struct sockaddr*)&client_addr, &client_addr_size);
+        bytes_read = recvfrom(socket_, local_buffer, bytes_to_receive, 0, (struct sockaddr*)&client_addr, &client_addr_size);
         if (bytes_read == SOCKET_ERROR)
         {
-            cerr << "Ошибка приема данных." << endl;
+            cerr << "Ошибка приема данных.\nError: " << GetLastError() << endl;
             return sockaddr{};
         }
         total_bytes_received += bytes_read;
@@ -118,7 +124,31 @@ sockaddr FileManager::RecvData(SOCKET socket, string &data)
         local_buffer[bytes_read] = '\0';
         data += string{ local_buffer };
     }
+
+    // Получаем контрольную сумму
+    unsigned checksum;
+    bytes_read = recvfrom(socket_, reinterpret_cast<char*>(&checksum), sizeof(checksum), 0, (struct sockaddr*)&client_addr, &client_addr_size);
+    if (bytes_read == SOCKET_ERROR)
+    {
+        cerr << "Ошибка приема данных.\nError: " << GetLastError() << endl;
+        return sockaddr{};
+    }
+    checksum = ntohl(checksum); 
+
+    unsigned calculated_checksum = GetCRC32(data);
+    if (calculated_checksum != checksum)
+        data.clear();
+
     return client_addr;
+}
+
+unsigned FileManager::GetCRC32(std::string data)
+{
+    unsigned int crc = crc32(0L, Z_NULL, 0);
+
+    crc = crc32(crc, reinterpret_cast<const Bytef*>(data.c_str()), data.length());
+
+    return crc;
 }
 
 VOID FileManager::ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work)
@@ -130,42 +160,40 @@ VOID FileManager::ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter,
 int FileManager::run()
 {
     HANDLE threadHandle;
-    // Инициализируем структуры сокетов
     if (StartServer() == -1)
         return -1;
 
 
     InitializeThreadpoolEnvironment(&call_back_environ_);
-    // Создаем пул потоков и устанавливаем максимальный и минимальный размер
     pool_ = CreateThreadpool(NULL);
     SetThreadpoolThreadMaximum(pool_, TH_SIZE_MAXIMUM);
     SetThreadpoolThreadMinimum(pool_, TH_SIZE_MINIMUM);
 
     SetThreadpoolCallbackPool(&call_back_environ_, pool_);
 
-    // Создаем группу очистки и ассоциируем ее спулом
     cleanupgroup_ = CreateThreadpoolCleanupGroup();
     SetThreadpoolCallbackCleanupGroup(&call_back_environ_, cleanupgroup_, NULL);
 
     workcallback_ = ThreadStarter;
-
-    // Принимаем и отправляем данные в бесконечном цикле
+    
+    Args* args = new Args;
     while (true)
     {
         sockaddr client_addr;
         string recv_data;
-        client_addr = RecvData(socket_, recv_data);
+        client_addr = RecvData(recv_data);
 
-        Args args;
-        args.ptr = this;
-        args.data = recv_data;
-        args.client_addr = client_addr;
-        work_ = CreateThreadpoolWork(workcallback_, &args, &call_back_environ_);
-        // Выполняем работу в потоке
+        args->ptr = this;
+        args->data = recv_data;
+        args->client_addr = client_addr;
+        work_ = CreateThreadpoolWork(workcallback_, args, &call_back_environ_);
         SubmitThreadpoolWork(work_);
     }
 
     StopServer();
+
+    delete args;
+    return 0;
 }
 
 int FileManager::ExecuteCommand(string command, sockaddr client_addr)
@@ -173,45 +201,69 @@ int FileManager::ExecuteCommand(string command, sockaddr client_addr)
     stringstream ss(command);
     string arg1, arg2;
 
-    ss >> arg1;
-    if (arg1.empty())
-        return -1;
-    Command cmd = static_cast<Command>(std::stoi(arg1));
-    if (cmd == kWrite)
+    ss >> command >> arg1;
+    if (command.empty())
     {
-        ss >> arg2;
+        cerr << "Invalid arguments" << endl;
+        last_error_ = "Invalid arguments";
+        SendData(last_error_, client_addr);
+        return 0;
+    }
+    Command cmd = static_cast<Command>(std::stoi(command));
+    if (cmd != kList and arg1.empty())
+    {
+        cerr << "Invalid arguments" << endl;
+        last_error_ = "Invalid arguments";
+        SendData(last_error_, client_addr);
+        return 0;
+    }
+    if (cmd == kWrite or cmd == kAppend)
+    {
+        std::getline(ss, arg2);
         if (arg2.empty())
+        {
+            cerr << "Invalid arguments" << endl;
             return -1;
+        }
     }
 
-    string answer;
+    int ret_value;
+    string data;
     switch (cmd)
     {
     case kCreateNew:
-        MyCreateFile(arg1);
+        ret_value = MyCreateFile(arg1);
         break;
     case kDelete:
-        MyDeleteFile(arg1);
+        ret_value = MyDeleteFile(arg1);
         break;
+    case kAppend:
     case kWrite:
-        Write(arg1, arg2);
+        ret_value = Write(arg1, arg2, cmd);
         break;
     case kRead:
-        answer = Read(arg1);
-        SendData(socket_, answer, client_addr);
+        ret_value = Read(arg1, data);
         break;
-    case kExit:
-
+    case kList:
+        ret_value = GetFileList(data);
         break;
     default:
+        last_error_ = "Undefined command!";
         break;
     }
 
+    if (ret_value == -1)
+        SendData(last_error_, client_addr);
+    else
+    {
+        data.empty() ? data = "0" : "";
+        SendData(data, client_addr);
+    }
     return 0;
 }
 
 //---------------------------------------------
-// Server commands
+//              Server commands
 //
 int FileManager::MyCreateFile(string name)
 {
@@ -226,6 +278,8 @@ int FileManager::MyCreateFile(string name)
     }
     else
     {
+        cerr << "File creation error!" << endl;
+        last_error_ = "File creation error. Such a file already exists.";
         return -1;
     }
 }
@@ -234,48 +288,59 @@ int FileManager::MyDeleteFile(string filename)
 {
     if (remove(string{ DEF_PATH + filename }.c_str()) != 0)
     {
-        cerr << "Ошибка при удалении файла: " << filename << endl;
+        cerr << "File deletion error: " << filename << endl;
+        last_error_ = "File deletion error";
         return -1;
     }
     return 0;
 }
 
-string FileManager::Read(string filename)
+int FileManager::Read(string filename, string &file_data)
 {
     fstream file(DEF_PATH + filename);
     if (!file.good())
     {
-        cerr << "Ошибка открытия файла для чтения!";
-        return string{""};
+        cerr << "Error opening a file for reading!";
+        last_error_ = "File opening error. There is no such file";
+        return -1;
     }
-    
-    string file_data;
-    while (!file.eof())
-    {
-        string temp_str;
-        file >> temp_str;
-        file_data += temp_str;
-    }
+    std::getline(file, file_data);
     
     file.close();
-    return file_data;
+    return 0;
 }
 
-int FileManager::Write(string filename, string data)
+int FileManager::Write(string filename, string data, Command cmd)
 {
-    fstream file(DEF_PATH + filename);
+    ofstream file;
+    
+    if (cmd == kWrite)
+        file.open(DEF_PATH + filename, std::ios::trunc);
+    else
+        file.open(DEF_PATH + filename, std::ios::app);
+
     if (!file.good())
     {
-        cerr << "Ошибка открытия файла для записи!";
+        cerr << "Error opening a file for writing!";
+        last_error_ = "File opening error. There is no such file";
         return -1;
     }
 
     file << data;
-
+    file.close();
     return 0;
 }
 
-int FileManager::Exit()
+int FileManager::GetFileList(string& file_list)
 {
+    if (std::filesystem::exists(DEF_PATH)) 
+    {
+        for (const auto& entry : std::filesystem::directory_iterator(DEF_PATH)) 
+        {
+            if (std::filesystem::is_regular_file(entry))
+                file_list += entry.path().string() + "\n";
+        }
+    }
+
     return 0;
 }

@@ -4,7 +4,7 @@ using std::cin;
 using std::cout;
 using std::cerr;
 using std::endl;
-using std::string;
+using std::string; 
 using std::stringstream;
 
 int FileManager::StartClient()
@@ -52,7 +52,7 @@ int FileManager::SendData(string data)
     bytes_sent = sendto(socket_, reinterpret_cast<char*>(&bytes_to_sent), sizeof(int), 0, (struct sockaddr*)&server_address_, sizeof(server_address_));
     if (bytes_sent == SOCKET_ERROR)
     {
-        cerr << "Ошибка отправки данных." << endl;
+        cerr << "Ошибка отправки данных.\nError: " << GetLastError() << endl;
         return -1;
     }
 
@@ -60,7 +60,7 @@ int FileManager::SendData(string data)
     while (total_bytes_send < data.size())
     {
         bytes_to_sent = min(data.size() - total_bytes_send, BUFFER_SIZE);
-        bytes_sent = sendto(socket_, data.data(), data.length(), 0, (struct sockaddr*)&server_address_, sizeof(server_address_));
+        bytes_sent = sendto(socket_, data.data() + total_bytes_send, bytes_to_sent, 0, (struct sockaddr*)&server_address_, sizeof(server_address_));
         if (bytes_sent == SOCKET_ERROR)
         {
             cerr << "Ошибка отправки данных." << endl;
@@ -70,20 +70,30 @@ int FileManager::SendData(string data)
         total_bytes_send += bytes_sent;
     }
 
+    // Отправляем контрольную сумму
+    unsigned checksum = GetCRC32(data);
+    checksum = htonl(checksum);
+    bytes_sent = sendto(socket_, reinterpret_cast<char*>(&checksum), sizeof(checksum), 0, (struct sockaddr*)&server_address_, sizeof(server_address_));
+    if (bytes_sent == SOCKET_ERROR)
+    {
+        cerr << "Ошибка отправки данных.\nError: " << GetLastError() << endl;
+        return -1;
+    }
+
     return total_bytes_send;
 }
 
 int FileManager::RecvData(string &data)
 {
-    int client_addr_size = sizeof(server_address_), expected_size = 0, bytes_read = 0;
-    char local_buffer[512];
+    int server_addr_size = sizeof(server_address_), expected_size = 0, bytes_read = 0;
+    char local_buffer[BUFFER_SIZE + 1];
     int bytes_to_receive, total_bytes_received = 0;
 
     // Получаем размер данных
-    bytes_read = recvfrom(socket_, reinterpret_cast<char*>(expected_size), sizeof(expected_size), 0, (struct sockaddr*)&server_address_, &client_addr_size);
+    bytes_read = recvfrom(socket_, reinterpret_cast<char*>(&expected_size), sizeof(expected_size), 0, (struct sockaddr*)&server_address_, &server_addr_size);
     if (bytes_read == SOCKET_ERROR)
     {
-        cerr << "Ошибка приема данных." << endl;
+        cerr << "Ошибка приема данных.\nError: " << GetLastError() << endl;
         return -1;
     }
     bytes_read = 0;
@@ -93,53 +103,89 @@ int FileManager::RecvData(string &data)
     while (total_bytes_received < expected_size)
     {
         bytes_to_receive = min(expected_size - total_bytes_received, BUFFER_SIZE);
-        bytes_read = recvfrom(socket_, local_buffer, bytes_to_receive, 0, (struct sockaddr*)&server_address_, &client_addr_size);
-
+        bytes_read = recvfrom(socket_, local_buffer, bytes_to_receive, 0, (struct sockaddr*)&server_address_, &server_addr_size);
         if (bytes_read == SOCKET_ERROR)
         {
-            cerr << "Ошибка приема данных." << endl;
+            cerr << "Ошибка приема данных.\nError: " << GetLastError() << endl;
             return -1;
         }
         total_bytes_received += bytes_read;
+
+        local_buffer[bytes_read] = '\0';
         data += string{ local_buffer };
     }
+
+    // Получаем контрольную сумму
+    unsigned checksum;
+    bytes_read = recvfrom(socket_, reinterpret_cast<char*>(&checksum), sizeof(checksum), 0, (struct sockaddr*)&server_address_, &server_addr_size);
+    if (bytes_read == SOCKET_ERROR)
+    {
+        cerr << "Ошибка приема данных.\nError: " << GetLastError() << endl;
+        return -1;
+    }
+    checksum = ntohl(checksum);
+
+    unsigned calculated_sum = GetCRC32(data);
+    if (calculated_sum != checksum)
+        data.clear();
 
     return total_bytes_received;
 }
 
+unsigned FileManager::GetCRC32(std::string data)
+{
+    // Инициализация CRC32
+    unsigned int crc = crc32(0L, Z_NULL, 0);
+
+    // Вычисление CRC32 для строки
+    crc = crc32(crc, reinterpret_cast<const Bytef*>(data.c_str()), data.length());
+
+    return crc;
+}
+
 string FileManager::ParsCommand()
 {
-    string command, filename, result, data;
+    string command, filename, read_str, data;
+    cout << ":";
+    std::getline(cin, read_str);
 
-    cout << "cmd: ";
-    cin >> command;
-    cout << "filename: ";
-    cin >> filename;
+    stringstream ss(read_str);
+    ss >> command >> filename;
+    
     if (command == "read" or command == "Read" or command == "READ")
     {
-        result = std::to_string(kRead);
-        result += " " + filename;
+        read_str = std::to_string(kRead);
+        read_str += " " + filename;
     }
     else if (command == "write" or command == "Write" or command == "WRITE")
     {
-        result = std::to_string(kWrite);
-        cout << "data: ";
-        cin >> data;
-        result += " " + filename + " " + data;
+        read_str = std::to_string(kWrite);
+        std::getline(ss, data);
+        read_str += " " + filename + " " + data;
+    }
+    else if (command == "append" or command == "Append" or command == "APPEND")
+    {
+        read_str = std::to_string(kAppend);
+        std::getline(ss, data);
+        read_str += " " + filename + " " + data;
     }
     else if (command == "create" or command == "Create" or command == "CREATE")
     {
-        result = std::to_string(kCreateNew);
-        result += " " + filename;
+        read_str = std::to_string(kCreateNew);
+        read_str += " " + filename;
     }
     else if (command == "delete" or command == "Delete" or command == "del" or command == "DELETE")
     {
-        result = std::to_string(kDelete);
-        result += " " + filename;
+        read_str = std::to_string(kDelete);
+        read_str += " " + filename;
+    }
+    else if (command == "list" or command == "List" or command == "LIST")
+    {
+        read_str = std::to_string(kList);
     }
 
 
-    return result;
+    return read_str;
 }
 
 int FileManager::run()
@@ -153,8 +199,9 @@ int FileManager::run()
         cmd = ParsCommand();
 
         SendData(cmd);
+        cmd.clear();
         RecvData(cmd);
-        if (cmd != "ok")
-            cout << cmd;
+        if (cmd != "0")
+            cout << cmd << endl;
     }
 }
