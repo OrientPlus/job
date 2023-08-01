@@ -46,8 +46,7 @@ int FileManager::StopClient()
 int FileManager::SendData(string data)
 {
     int total_bytes_send = 0, bytes_to_sent, bytes_sent;
-
-    // Отправляем размер данных
+    // Sending the data size
     bytes_to_sent = htonl(data.length());
     bytes_sent = sendto(socket_, reinterpret_cast<char*>(&bytes_to_sent), sizeof(int), 0, (struct sockaddr*)&server_address_, sizeof(server_address_));
     if (bytes_sent == SOCKET_ERROR)
@@ -56,7 +55,7 @@ int FileManager::SendData(string data)
         return -1;
     }
 
-    // Отправляем данные блоками
+    // Sending data in blocks
     while (total_bytes_send < data.size())
     {
         bytes_to_sent = min(data.size() - total_bytes_send, BUFFER_SIZE);
@@ -70,7 +69,7 @@ int FileManager::SendData(string data)
         total_bytes_send += bytes_sent;
     }
 
-    // Отправляем контрольную сумму
+    // Sending a checksum of data
     unsigned checksum = GetCRC32(data);
     checksum = htonl(checksum);
     bytes_sent = sendto(socket_, reinterpret_cast<char*>(&checksum), sizeof(checksum), 0, (struct sockaddr*)&server_address_, sizeof(server_address_));
@@ -89,7 +88,7 @@ int FileManager::RecvData(string &data)
     char local_buffer[BUFFER_SIZE + 1];
     int bytes_to_receive, total_bytes_received = 0;
 
-    // Получаем размер данных
+    // Getting the size of the data
     bytes_read = recvfrom(socket_, reinterpret_cast<char*>(&expected_size), sizeof(expected_size), 0, (struct sockaddr*)&server_address_, &server_addr_size);
     if (bytes_read == SOCKET_ERROR)
     {
@@ -99,7 +98,7 @@ int FileManager::RecvData(string &data)
     bytes_read = 0;
     expected_size = ntohl(expected_size);
 
-    // Получаем данные блоками 
+    // Getting data in blocks
     while (total_bytes_received < expected_size)
     {
         bytes_to_receive = min(expected_size - total_bytes_received, BUFFER_SIZE);
@@ -115,7 +114,7 @@ int FileManager::RecvData(string &data)
         data += string{ local_buffer };
     }
 
-    // Получаем контрольную сумму
+    // Getting the checksum of the data
     unsigned checksum;
     bytes_read = recvfrom(socket_, reinterpret_cast<char*>(&checksum), sizeof(checksum), 0, (struct sockaddr*)&server_address_, &server_addr_size);
     if (bytes_read == SOCKET_ERROR)
@@ -125,6 +124,7 @@ int FileManager::RecvData(string &data)
     }
     checksum = ntohl(checksum);
 
+    // Check that the checksum matches
     unsigned calculated_sum = GetCRC32(data);
     if (calculated_sum != checksum)
         data.clear();
@@ -161,7 +161,7 @@ string FileManager::ParsCommand()
     {
         read_str = std::to_string(kWrite);
         std::getline(ss, data);
-        read_str += " " + filename + " " + data;
+        read_str += " " + filename + data;
     }
     else if (command == "append" or command == "Append" or command == "APPEND")
     {

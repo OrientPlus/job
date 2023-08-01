@@ -32,8 +32,8 @@ public:
 private:
     int StartServer();
     int StopServer();
-    int SendData(std::string data, sockaddr clientAddr);
-    sockaddr RecvData(std::string &data);
+    int SendData(std::string data, sockaddr client_addr);
+    int RecvData(std::string &data, sockaddr &client_addr);
     unsigned GetCRC32(std::string data);
 
     static VOID CALLBACK ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
@@ -63,7 +63,7 @@ private:
 
 struct Args
 {
-    FileManager* ptr;
-    std::string data;
-    sockaddr client_addr;
+    FileManager* ptr_;
+    std::string data_;
+    sockaddr client_addr_;
 };

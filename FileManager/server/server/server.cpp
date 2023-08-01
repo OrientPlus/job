@@ -92,24 +92,24 @@ int FileManager::SendData(string data, sockaddr clientAddr)
     return total_bytes_send;
 }
 
-sockaddr FileManager::RecvData(string &data)
+int FileManager::RecvData(string &data, sockaddr &client_addr)
 {
-    sockaddr client_addr;
     int client_addr_size = sizeof(client_addr), expected_size = 0, bytes_read = 0;
     char local_buffer[BUFFER_SIZE + 1];
     int bytes_to_receive, total_bytes_received = 0;
 
-    // Получаем размер данных
+    // Getting the size of the data
     bytes_read = recvfrom(socket_, reinterpret_cast<char*>(&expected_size), sizeof(expected_size), 0, (struct sockaddr*)&client_addr, &client_addr_size);
     if (bytes_read == SOCKET_ERROR)
     {
         cerr << "Ошибка приема данных.\nError: " << GetLastError() << endl;
-        return sockaddr{};
+        last_error_ = "Data acquisition error!";
+        return -1;
     }
     bytes_read = 0;
     expected_size = ntohl(expected_size);
 
-    // Получаем данные блоками 
+    // Getting data in blocks
     while(total_bytes_received < expected_size)
     {
         bytes_to_receive = min(expected_size - total_bytes_received, BUFFER_SIZE);
@@ -117,7 +117,8 @@ sockaddr FileManager::RecvData(string &data)
         if (bytes_read == SOCKET_ERROR)
         {
             cerr << "Ошибка приема данных.\nError: " << GetLastError() << endl;
-            return sockaddr{};
+            last_error_ = "Data acquisition error!";
+            return -1;
         }
         total_bytes_received += bytes_read;
 
@@ -125,21 +126,26 @@ sockaddr FileManager::RecvData(string &data)
         data += string{ local_buffer };
     }
 
-    // Получаем контрольную сумму
+    // Getting the checksum of the data
     unsigned checksum;
     bytes_read = recvfrom(socket_, reinterpret_cast<char*>(&checksum), sizeof(checksum), 0, (struct sockaddr*)&client_addr, &client_addr_size);
     if (bytes_read == SOCKET_ERROR)
     {
         cerr << "Ошибка приема данных.\nError: " << GetLastError() << endl;
-        return sockaddr{};
+        last_error_ = "Data acquisition error!";
+        return -1;
     }
     checksum = ntohl(checksum); 
 
+    // Check that the checksum matches
     unsigned calculated_checksum = GetCRC32(data);
     if (calculated_checksum != checksum)
-        data.clear();
+    {
+        last_error_ = "The checksum does not match!";
+        return -1;
+    }
 
-    return client_addr;
+    return 0;
 }
 
 unsigned FileManager::GetCRC32(std::string data)
@@ -154,7 +160,7 @@ unsigned FileManager::GetCRC32(std::string data)
 VOID FileManager::ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work)
 {
     Args* args = reinterpret_cast<Args*>(Parameter);
-    args->ptr->ExecuteCommand(args->data, args->client_addr);
+    args->ptr_->ExecuteCommand(args->data_, args->client_addr_);
 }
 
 int FileManager::run()
@@ -181,17 +187,20 @@ int FileManager::run()
     {
         sockaddr client_addr;
         string recv_data;
-        client_addr = RecvData(recv_data);
+        if (RecvData(recv_data, client_addr) == -1)
+        {
+            SendData(last_error_, client_addr);
+            continue;
+        }
 
-        args->ptr = this;
-        args->data = recv_data;
-        args->client_addr = client_addr;
+        args->ptr_ = this;
+        args->data_ = recv_data;
+        args->client_addr_ = client_addr;
         work_ = CreateThreadpoolWork(workcallback_, args, &call_back_environ_);
         SubmitThreadpoolWork(work_);
     }
 
     StopServer();
-
     delete args;
     return 0;
 }
@@ -225,6 +234,7 @@ int FileManager::ExecuteCommand(string command, sockaddr client_addr)
             cerr << "Invalid arguments" << endl;
             return -1;
         }
+        arg2.erase(0, 1);
     }
 
     int ret_value;
