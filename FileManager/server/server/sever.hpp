@@ -10,6 +10,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <zlib.h>
+#include "threadPool.hpp"
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma warning(disable:4996)
@@ -36,8 +37,8 @@ private:
     int RecvData(std::string &data, sockaddr &client_addr);
     unsigned GetCRC32(std::string data);
 
-    static VOID CALLBACK ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
-    int ExecuteCommand(std::string command, sockaddr client_addr);
+    static void ThreadStarter(LPVOID parameter);
+    void ExecuteCommand(std::string command, sockaddr client_addr);
 
 
     int MyCreateFile(std::string name);
@@ -59,11 +60,4 @@ private:
     TP_CALLBACK_ENVIRON call_back_environ_;
 
     std::string last_error_;
-};
-
-struct Args
-{
-    FileManager* ptr_;
-    std::string data_;
-    sockaddr client_addr_;
 };

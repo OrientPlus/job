@@ -157,32 +157,9 @@ unsigned FileManager::GetCRC32(std::string data)
     return crc;
 }
 
-VOID FileManager::ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work)
-{
-    Args* args = reinterpret_cast<Args*>(Parameter);
-    args->ptr_->ExecuteCommand(args->data_, args->client_addr_);
-}
-
 int FileManager::run()
 {
-    HANDLE threadHandle;
-    if (StartServer() == -1)
-        return -1;
-
-
-    InitializeThreadpoolEnvironment(&call_back_environ_);
-    pool_ = CreateThreadpool(NULL);
-    SetThreadpoolThreadMaximum(pool_, TH_SIZE_MAXIMUM);
-    SetThreadpoolThreadMinimum(pool_, TH_SIZE_MINIMUM);
-
-    SetThreadpoolCallbackPool(&call_back_environ_, pool_);
-
-    cleanupgroup_ = CreateThreadpoolCleanupGroup();
-    SetThreadpoolCallbackCleanupGroup(&call_back_environ_, cleanupgroup_, NULL);
-
-    workcallback_ = ThreadStarter;
-    
-    Args* args = new Args;
+    thread_pool tp(5);
     while (true)
     {
         sockaddr client_addr;
@@ -193,19 +170,20 @@ int FileManager::run()
             continue;
         }
 
-        args->ptr_ = this;
-        args->data_ = recv_data;
-        args->client_addr_ = client_addr;
-        work_ = CreateThreadpoolWork(workcallback_, args, &call_back_environ_);
-        SubmitThreadpoolWork(work_);
+        tp.add_task(&FileManager::ThreadStarter, recv_data, client_addr);
     }
 
     StopServer();
-    delete args;
     return 0;
 }
 
-int FileManager::ExecuteCommand(string command, sockaddr client_addr)
+void FileManager::ThreadStarter(LPVOID parameter)
+{
+    FileManager* ptr = reinterpret_cast<FileManager*>(parameter);
+    ptr->ExecuteCommand("", sockaddr{});
+}
+
+void FileManager::ExecuteCommand(string command, sockaddr client_addr)
 {
     stringstream ss(command);
     string arg1, arg2;
@@ -216,7 +194,7 @@ int FileManager::ExecuteCommand(string command, sockaddr client_addr)
         cerr << "Invalid arguments" << endl;
         last_error_ = "Invalid arguments";
         SendData(last_error_, client_addr);
-        return 0;
+        return;
     }
     Command cmd = static_cast<Command>(std::stoi(command));
     if (cmd != kList and arg1.empty())
@@ -224,7 +202,7 @@ int FileManager::ExecuteCommand(string command, sockaddr client_addr)
         cerr << "Invalid arguments" << endl;
         last_error_ = "Invalid arguments";
         SendData(last_error_, client_addr);
-        return 0;
+        return;
     }
     if (cmd == kWrite or cmd == kAppend)
     {
@@ -232,7 +210,7 @@ int FileManager::ExecuteCommand(string command, sockaddr client_addr)
         if (arg2.empty())
         {
             cerr << "Invalid arguments" << endl;
-            return -1;
+            return;
         }
         arg2.erase(0, 1);
     }
@@ -269,7 +247,7 @@ int FileManager::ExecuteCommand(string command, sockaddr client_addr)
         data.empty() ? data = "0" : "";
         SendData(data, client_addr);
     }
-    return 0;
+    return;
 }
 
 //---------------------------------------------
