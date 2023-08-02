@@ -26,10 +26,19 @@ void FileManager::run()
         return;
 
 
-    // Устанавливаем сокет в неблокирующий режим
-    u_long mode = 1;
-    if (ioctlsocket(socket_, FIONBIO, &mode) != 0)
-        std::cerr << "Ошибка при установке сокета в неблокирующий режим." << std::endl;
+    //// Устанавливаем сокет в неблокирующий режим
+    //u_long mode = 1;
+    //if (ioctlsocket(socket_, FIONBIO, &mode) != 0)
+    //    std::cerr << "Ошибка при установке сокета в неблокирующий режим." << std::endl;
+
+    // Устанавливаем минимальный маймаут ожидания
+    timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 1;
+
+    fd_set readSet;
+    FD_ZERO(&readSet);
+    FD_SET(socket_, &readSet);
 
     // Инициализируем пул потоков
     InitializeThreadpoolEnvironment(&call_back_environ_);
@@ -47,7 +56,7 @@ void FileManager::run()
     args->ptr_ = this;
     workcallback_ = StartHiddener;
     work_ = CreateThreadpoolWork(workcallback_, args, &call_back_environ_);
-    SubmitThreadpoolWork(work_);
+    SubmitThreadpoolWork(work_);        
 
     // Основной цикл отвечающий за обмен сообщениями
     string request_str;
@@ -56,7 +65,16 @@ void FileManager::run()
     {
         // Проверяем наличие данных на чтение от клиента
         request_str.clear();
-        RecvData(request_str, client);
+        int result = select(0, &readSet, nullptr, nullptr, &timeout);
+        if (result == SOCKET_ERROR)
+        {
+            cout << "Error: " << GetLastError() << endl;
+            system("pause");
+            exit(1);
+        }
+        if (result != 0 and result != SOCKET_ERROR)
+            RecvData(request_str, client);
+
         if (!request_str.empty())
         {
             // Если получены данные от клиента, определяем их назначение
@@ -74,7 +92,8 @@ void FileManager::run()
                 work_ = CreateThreadpoolWork(workcallback_, args, &call_back_environ_);
                 SubmitThreadpoolWork(work_);
             }
-            else {
+            else 
+            {
                 client_data_ = request_str;
                 cv_.notify_one();
             }

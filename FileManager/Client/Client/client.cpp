@@ -229,10 +229,19 @@ int FileManager::run()
     // Инициализируем структуры сокета 
     StartClient();
 
-    // Устанавливаем сокет в неблокирующий режим
-    u_long mode = 1;
-    if (ioctlsocket(socket_, FIONBIO, &mode) != 0)
-        std::cerr << "Ошибка при установке сокета в неблокирующий режим." << std::endl;
+    //// Устанавливаем сокет в неблокирующий режим
+    //u_long mode = 1;
+    //if (ioctlsocket(socket_, FIONBIO, &mode) != 0)
+    //    std::cerr << "Ошибка при установке сокета в неблокирующий режим." << std::endl;
+
+    // Устанавливаем минимальный маймаут ожидания
+    timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 1;
+
+    fd_set readSet;
+    FD_ZERO(&readSet);
+    FD_SET(socket_, &readSet);
 
     // Инициализируем пул потоков
     InitializeThreadpoolEnvironment(&call_back_environ_);
@@ -254,8 +263,10 @@ int FileManager::run()
     string request_str;
     while (true)
     {
+        int result = select(0, &readSet, nullptr, nullptr, &timeout);
+        if (result != 0 and result != SOCKET_ERROR)
+            RecvData(request_str);
 
-        RecvData(request_str);
         if (!request_str.empty())
         {
             // Если в начале запроса есть символ '#' - это запрос на исполнение скрытой команды
