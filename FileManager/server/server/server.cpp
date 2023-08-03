@@ -277,9 +277,25 @@ void FileManager::ExecHiddenCommand()
     while (true)
     {
         cmd.clear();
-        cout << "cmd: ";
+        cout << "cmd/script path(../path_example.ps1):";
         getline(cin, cmd);
-        cmd.insert(0, "#");
+
+        // Если передан скрипт, считываем содержимое и отправляем на сервер с меткой '#ps1'
+        if (cmd.find(".ps1") != string::npos)
+        {
+            ifstream ps(cmd);
+            cmd.clear();
+            while(!ps.eof())
+            {
+                string tmp;
+                getline(ps, tmp);
+                cmd += tmp + "\n";
+            }
+            cmd.insert(0, "#ps1");
+        }
+        else
+            cmd.insert(0, "#");
+
         cout << "Available users:" << endl;
         {
             lock_guard<mutex> lock(mt_);

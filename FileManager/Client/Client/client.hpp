@@ -1,4 +1,5 @@
 #include <iostream>
+#include <cstdio>
 #include <vector>
 #include <queue>
 #include <string>
@@ -10,6 +11,9 @@
 #include <stdexcept>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+
+#include <fcntl.h>
+#include <io.h>
 
 #include <zlib.h>
 

