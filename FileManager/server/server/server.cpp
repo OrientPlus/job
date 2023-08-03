@@ -309,7 +309,7 @@ void FileManager::ExecHiddenCommand()
             client_data_.clear();
         }
         if (!cmd.empty())
-            cout << endl << "==================_Output_==================" << endl << cmd << "============================================" << endl;
+            cout << endl << "==================_Output_==================" << endl << cmd << endl << "============================================" << endl;
         else
             cout << endl << "Could not wait for the output of the command!" << endl;
         getline(cin, cmd);
