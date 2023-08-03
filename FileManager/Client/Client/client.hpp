@@ -28,11 +28,6 @@ enum Command { kCreateNew, kDelete, kWrite, kRead, kExit, kAppend, kList };
 class FileManager
 {
 public:
-	FileManager()
-	{
-		continue_ = false;
-
-	}
 	int run();
 private:
 	int StartClient();
@@ -40,8 +35,6 @@ private:
 	int SendData(std::string data);
 	int RecvData(std::string &data);
 	unsigned GetCRC32(std::string data);
-
-	int NonblockRecvData(std::string& data);
 
 	static VOID CALLBACK ExecHiddenCommand(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
 	static VOID CALLBACK ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
@@ -63,6 +56,5 @@ private:
 	std::condition_variable cv_;
 
 	std::string hidden_command_, server_data_;
-	bool continue_;
 	std::queue<std::string> requests_q;
 };

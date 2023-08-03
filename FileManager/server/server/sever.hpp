@@ -5,7 +5,6 @@
 #include <sstream>
 #include <vector>
 #include <queue>
-#include <unordered_set>
 #include <filesystem>
 #include <mutex>
 #include <algorithm>
@@ -45,6 +44,8 @@ private:
 
     static VOID CALLBACK ThreadStarter(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work);
     int ExecuteCommand(std::string command, sockaddr_in client_addr);
+
+    void VectorUniquePush(std::vector<sockaddr_in>& vec, sockaddr_in elem);
 
 
     int MyCreateFile(std::string name);
