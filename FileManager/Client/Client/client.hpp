@@ -47,6 +47,7 @@ private:
 
 	std::string ParsCommand();
 
+
 	PTP_POOL pool_;
 	PTP_CLEANUP_GROUP cleanupgroup_;
 	PTP_WORK work_;

