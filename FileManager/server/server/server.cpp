@@ -246,6 +246,10 @@ int FileManager::RecvData(string &data, sockaddr_in &client_addr)
         return -1;
     }
 
+
+    //
+    cout << "\nRECVDATA:\n" << data << endl;
+
     return 0;
 }
 

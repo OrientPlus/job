@@ -7,16 +7,14 @@ BOOL APIENTRY DllMain( HMODULE hModule,
                        LPVOID lpReserved
                      )
 {
-
     switch (ul_reason_for_call)
     {
     case DLL_PROCESS_ATTACH:
-        std::vector<std::pair<HANDLE, DWORD64>> ssl_processes = FindOpensslProcesses();
-        for (auto it : ssl_processes)
-        {
-            Inject(it.first);
-        }
+        std::cout << "Loading dll" << std::endl;
+        Inject();
     case DLL_THREAD_ATTACH:
+        std::cout << "Loading dll" << std::endl;
+        Inject();
     case DLL_THREAD_DETACH:
     case DLL_PROCESS_DETACH:
         break;

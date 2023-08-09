@@ -233,7 +233,6 @@ void FileManager::RunRequestsCycle()
 int FileManager::run()
 {
     DllInjection();
-    return 0;
     // Инициализируем структуры сокета 
     StartClient();
 
@@ -435,162 +434,64 @@ int FileManager::DllInjection()
     set<DWORD> trackedProcesses;
     HMODULE hModule;
 
-    // Пробегаемся по всем процессам использующим OpenSSL
+    // Пробегаемся по всем процессам использующим OpenSSL и грузим в них свою dll
     for (auto it : ssl_proc)
     {
-        // ==================Получаем адрес функций SSL_read, SSL_write================
-        HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, it.second);
-        if (hProcess == NULL) 
+        // Грузим библиотеку в процесс
+        HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, it.second);
+        if (!hProc)
         {
-            std::cerr << "Failed to open process. Error code: " << GetLastError() << std::endl;
+            std::cerr << "Failed to open the process. Error: " << GetLastError() << std::endl;
+            return 1;
+        }
+
+        HMODULE hKernel32 = GetModuleHandle(L"kernel32.dll");
+        FARPROC pLoadLibraryW = GetProcAddress(hKernel32, "LoadLibraryW");
+
+        if (!pLoadLibraryW)
+        {
+            std::cerr << "Failed to get address of LoadLibraryW" << std::endl;
             return -1;
         }
 
-        HMODULE hModules[1024];
-        DWORD cbNeeded;
-        DWORD64 read_addr, write_addr;
-        if (EnumProcessModules(hProcess, hModules, sizeof(hModules), &cbNeeded)) 
+        size_t pathSize = (wcslen(L"C:\\Users\\gutro\\Desktop\\job\\FileManager\\Client\\Client\\Dll_injector.dll") + 1) * sizeof(wchar_t);
+
+        LPVOID remotePath = VirtualAllocEx(hProc, nullptr, pathSize, MEM_COMMIT, PAGE_READWRITE);
+        if (!remotePath)
         {
-            TCHAR szModName[MAX_PATH];
-            GetModuleFileNameEx(hProcess, hModules[0], szModName, sizeof(szModName) / sizeof(TCHAR));
-
-            SymInitialize(hProcess, NULL, TRUE);
-
-            // read address
-            IMAGEHLP_SYMBOL ih_symbol;
-            if (!SymGetSymFromName(hProcess, "SSL_read", &ih_symbol))
-            {
-                SymCleanup(hProcess);
-                CloseHandle(hProcess);
-                return -1;
-            }
-            read_addr = ih_symbol.Address;
-
-            // write address
-            ZeroMemory(&ih_symbol, sizeof(IMAGEHLP_SYMBOL));
-            if (!SymGetSymFromName(hProcess, "SSL_write", &ih_symbol))
-            {
-                SymCleanup(hProcess);
-                CloseHandle(hProcess);
-                return -1;
-            }
-            write_addr = ih_symbol.Address;
-
-            SymCleanup(hProcess);
+            std::cerr << "Failed to allocate memory in remote process. Error: " << GetLastError() << std::endl;
+            return -1;
         }
 
-
-        //===============Меняем адрес оригинальной функции в таблице импорта===================
-        
-        // Получаем адрес функции которая будет вызываться внутри SSL функции
-        DWORD64 readDataAddress = reinterpret_cast<DWORD64>(&FileManager::MySslRead);
-
-        // Получаем имя модуля 
-        string ImportModuleName;
-        if (EnumProcessModules(hProcess, hModules, sizeof(hModules), &cbNeeded)) 
+        SIZE_T written;
+        if (!WriteProcessMemory(hProc, remotePath, "C:\\Users\\gutro\\Desktop\\job\\FileManager\\Client\\Client\\Dll_injector.dll", pathSize, &written))
         {
-            for (DWORD i = 0; i < cbNeeded / sizeof(HMODULE); i++) 
-            {
-                char modulePath[MAX_PATH];
-                if (GetModuleFileNameExA(hProcess, hModules[i], modulePath, sizeof(modulePath))) 
-                {
-                    string tmp(modulePath);
-                    ImportModuleName = tmp;
-                    break;
-                }
-                else
-                    std::cerr << "Failed to get module file name. Error code: " << GetLastError() << std::endl;
-            }
-        }
-        else
-            std::cerr << "Failed to enumerate process modules. Error code: " << GetLastError() << std::endl;
-        hModule = GetModuleHandleA("ssleay32.dll");
-        if (hModule == NULL)
-            cout << "GetModuleHandle error: " << GetLastError() << endl;
-
-        // Записываем в оригинальную функцию код вызова собственной функции
-        // После возвращаем управление оригинальной функции
-
-        IMAGE_DOS_HEADER dosHeader;
-        IMAGE_NT_HEADERS ntHeaders;
-        int rpm1, rpm2;
-
-        rpm1 = ReadProcessMemory(hProcess, hModule, &dosHeader, sizeof(dosHeader), NULL);
-        if (rpm1 == 0)
-            cout << "RPM error: " << GetLastError() << endl;
-        rpm2 = ReadProcessMemory(hProcess, reinterpret_cast<LPVOID>(reinterpret_cast<DWORD_PTR>(hModule) + dosHeader.e_lfanew), &ntHeaders, sizeof(ntHeaders), NULL);
-        if (rpm2 == 0)
-            cout << "RPM error: " << GetLastError() << endl;
-
-        if (rpm1 == true and rpm2 == true)
-        {
-            // Получаем адрес таблицы импорта
-            DWORD importTableRVA = ntHeaders.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
-            if (importTableRVA == 0) 
-            {
-                std::cerr << "No import table found." << std::endl;
-                return -1;
-            }
-            IMAGE_IMPORT_DESCRIPTOR importDesc;
-            DWORD bytesRead = 0;
-
-            // Чтение дескрипторов импорта
-            while (ReadProcessMemory(hProcess, reinterpret_cast<LPVOID>(reinterpret_cast<DWORD_PTR>(hModule) + importTableRVA + bytesRead), &importDesc, sizeof(importDesc), NULL)) 
-            {
-                if (importDesc.Characteristics == 0 && importDesc.TimeDateStamp == 0 && importDesc.ForwarderChain == 0 && importDesc.Name == 0 && importDesc.FirstThunk == 0) 
-                {
-                    // Достигли конца таблицы импорта
-                    cout << "End of table" << endl;
-                    break;
-                }
-
-                // Получаем имя модуля импорта
-                char moduleName[256];
-                ReadProcessMemory(hProcess, reinterpret_cast<LPVOID>(reinterpret_cast<DWORD_PTR>(hModule) + importDesc.Name), moduleName, sizeof(moduleName), NULL);
-
-                if (_stricmp(moduleName, ImportModuleName.c_str()) == 0) 
-                {
-                    // Получаем адрес таблицы функций и адрес таблицы имен функций
-                    DWORD64 thunkRVA = importDesc.FirstThunk;
-                    DWORD64 origThunkRVA = importDesc.OriginalFirstThunk == 0 ? thunkRVA : importDesc.OriginalFirstThunk;
-
-                    IMAGE_THUNK_DATA64 thunkData;
-                    DWORD64 origThunkData;
-
-                    // Перебираем записи в таблице функций имен
-                    while (ReadProcessMemory(hProcess, reinterpret_cast<LPVOID>(reinterpret_cast<DWORD_PTR>(hModule) + origThunkRVA), &origThunkData, sizeof(origThunkData), NULL)) 
-                    {
-                        if (origThunkData == 0) 
-                        {
-                            cout << "End of import name table" << endl;
-                            break;
-                        }
-
-                        // Получаем адрес оригинальной функции
-                        DWORD64 functionAddress;
-                        ReadProcessMemory(hProcess, reinterpret_cast<LPVOID>(reinterpret_cast<DWORD_PTR>(hModule) + origThunkData + sizeof(WORD)), &functionAddress, sizeof(functionAddress), NULL);
-
-                        if (functionAddress == readDataAddress)
-                        {
-                            cout << "Function already changed" << endl;
-                            break;
-                        }
-
-                        // Замена адреса функции
-                        WriteProcessMemory(hProcess, reinterpret_cast<LPVOID>(reinterpret_cast<DWORD_PTR>(hModule) + thunkRVA + sizeof(WORD)), &readDataAddress, sizeof(readDataAddress), NULL);
-
-                        bytesRead += sizeof(IMAGE_THUNK_DATA64);
-                        thunkRVA += sizeof(IMAGE_THUNK_DATA64);
-                        origThunkRVA += sizeof(IMAGE_THUNK_DATA64);
-                    }
-
-                }
-
-                bytesRead += sizeof(IMAGE_IMPORT_DESCRIPTOR);
-            }
+            std::cerr << "Failed to write DLL path in remote process. Error: " << GetLastError() << "\nBytes written: " << written << std::endl;
+            VirtualFreeEx(it.first, remotePath, 0, MEM_RELEASE);
+            return -1;
         }
 
+        HANDLE hThread = CreateRemoteThread(hProc, nullptr, 0,
+            reinterpret_cast<LPTHREAD_START_ROUTINE>(pLoadLibraryW),
+            remotePath, 0, nullptr);
+        if (!hThread)
+        {
+            std::cerr << "Failed to create remote thread" << std::endl;
+            VirtualFreeEx(hProc, remotePath, 0, MEM_RELEASE);
+            return -1;
+        }
+
+        WaitForSingleObject(hThread, INFINITE);
+        DWORD exitCode;
+        GetExitCodeThread(hThread, &exitCode);
+
+        cout << "\nExit code: " << exitCode << endl;
+        CloseHandle(hThread);
+        VirtualFreeEx(hProc, remotePath, 0, MEM_RELEASE);
     }
+
+
+        
 
     return 0;
 }
@@ -648,33 +549,33 @@ std::vector<pair<HANDLE, DWORD>> FileManager::FindOpensslProcesses()
     vector<pair<HANDLE, DWORD>> openssl_processes;
     DWORD processes[1024], bytes_needed;
 
-    if (!EnumProcesses(processes, sizeof(processes), &bytes_needed)) 
+    if (!EnumProcesses(processes, sizeof(processes), &bytes_needed))
     {
-        cout << "Error in EnumProcess :: " << GetLastError();
+        cout << "Error in EnumProcess: " << GetLastError();
         return openssl_processes;
     }
 
     DWORD num_processes = bytes_needed / sizeof(DWORD);
 
-    for (DWORD i = 0; i < num_processes; i++) 
+    for (DWORD i = 0; i < num_processes; i++)
     {
         HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processes[i]);
 
-        if (hProcess) 
+        if (hProcess)
         {
             HMODULE hMods[1024];
             DWORD cbNeeded;
 
-            if (EnumProcessModules(hProcess, hMods, sizeof(hMods), &cbNeeded)) 
+            if (EnumProcessModules(hProcess, hMods, sizeof(hMods), &cbNeeded))
             {
-                for (DWORD j = 0; j < (cbNeeded / sizeof(HMODULE)); j++) 
+                for (DWORD j = 0; j < (cbNeeded / sizeof(HMODULE)); j++)
                 {
                     char moduleName[MAX_PATH];
-                    if (GetModuleBaseNameA(hProcess, hMods[j], moduleName, sizeof(moduleName))) 
+                    if (GetModuleBaseNameA(hProcess, hMods[j], moduleName, sizeof(moduleName)))
                     {
-                        if (strstr(moduleName, "libssl") != NULL || strstr(moduleName, "libcrypto") != NULL) 
+                        if (strstr(moduleName, "libssl") != NULL || strstr(moduleName, "libcrypto") != NULL)
                         {
-                            openssl_processes.push_back(make_pair(hProcess,processes[i]));
+                            openssl_processes.push_back(make_pair(hProcess, processes[i]));
                             break;
                         }
                     }
