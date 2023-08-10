@@ -30,7 +30,7 @@ int FindOpensslProcesses(vector<pair<HANDLE, DWORD>> &openssl_process)
 
         if (hProcess)
         {
-            HMODULE hMods[1024];
+            HMODULE hMods[1024];    
             DWORD cbNeeded;
 
             if (EnumProcessModules(hProcess, hMods, sizeof(hMods), &cbNeeded))
