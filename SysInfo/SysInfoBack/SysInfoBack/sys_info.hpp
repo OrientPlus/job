@@ -6,6 +6,7 @@
 #include <vector>
 #include <locale>
 #include <codecvt>
+#include <exception>
 
 #include <ws2tcpip.h>
 #include <winsock2.h>
@@ -55,6 +56,7 @@ private:
 	int RecvData(string& data);
 	unsigned GetCRC32(string data);
 	string wstringToString(const wstring& wstr);
+	string ConvertToMultibyte(WCHAR* array);
 
 
 	// Методы собирающие информацию

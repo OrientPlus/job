@@ -3,22 +3,37 @@
 SysInfoFront::SysInfoFront(QWidget *parent)
     : QMainWindow(parent)
 {
+    proc_timer = new QTimer;
+    netw_timer = new QTimer;
     OpenSocket();
     ui.setupUi(this);
     connect(ui.disk_button, &QPushButton::clicked, this, &SysInfoFront::DisplayDiskInfo);
     connect(ui.proc_button, &QPushButton::clicked, this, &SysInfoFront::DisplayProcInfo);
     connect(ui.device_button, &QPushButton::clicked, this, &SysInfoFront::DisplayDeviceInfo);
     connect(ui.netw_button, &QPushButton::clicked, this, &SysInfoFront::DisplayNetworkInfo);
+    connect(proc_timer, &QTimer::timeout, this, &SysInfoFront::DisplayProcInfo);
+    connect(netw_timer, &QTimer::timeout, this, &SysInfoFront::DisplayNetworkInfo);
+
+    model = new QStandardItemModel;
+    proxyModel = new NumericSortProxyModel;
 }
 
 SysInfoFront::~SysInfoFront()
 {
+    delete proc_timer;
+    delete netw_timer;
+    delete model;
+    delete proxyModel;
+
     CloseSocket();
 }
 
-
 void SysInfoFront::DisplayDiskInfo()
 {
+    if (proc_timer->isActive())
+        proc_timer->stop();
+    if (netw_timer->isActive())
+        netw_timer->stop();
     SendData("#1");
 
     string json_data;
@@ -28,45 +43,175 @@ void SysInfoFront::DisplayDiskInfo()
     json disks_info;
     disks_info = json::parse(json_data);
 
-    QStandardItemModel model;
+    model->setRowCount(0);
+    ui.view_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    model->setColumnCount(3);
+    ui.view_table->setShowGrid(true);
+    ui.view_table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    model->setHorizontalHeaderLabels(QStringList() << "Disk" << "Total size, Mb" << "Free size, Mb");
 
-    // Создаем заголовки для столбцов
-    model.setHorizontalHeaderLabels(QStringList() << "Имя" << "Размер" << "Свободное место");
-
-    // Пример данных о дисках (можете добавить свои данные)
-    // Пример данных о дисках (можете добавить свои данные)
-    QList<QList<QStandardItem*>> data;
+    int counter = 0;
     for (auto disk : disks_info)
     {
-        data << QList<QStandardItem*>{new QStandardItem(QString::fromStdString(disk["DISK"])), new QStandardItem(QString::fromStdString(disk["TOTAL SIZE"])), new QStandardItem(QString::fromStdString(disk["FREE SIZE"]))};
+        QList<QStandardItem*> row_items;
+        row_items.append(new QStandardItem(QString::fromStdString(disk["DISK"])));
+        row_items.append(new QStandardItem(QString::fromStdString(disk["TOTAL SIZE"])));
+        row_items.append(new QStandardItem(QString::fromStdString(disk["FREE SIZE"])));
+        model->appendRow(row_items);
     }
+    ui.view_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    ui.view_table->setSortingEnabled(true);
 
-    // Добавляем данные в модель
-    for (const QList<QStandardItem*> &row : data) {
-        model.appendRow(row);
-    }
+    // Устанавливаем исходную модель таблицы
+    proxyModel->setSourceModel(model);
 
+    // Устанавливаем прокси-модель с переопределенной фильтрацией
+    ui.view_table->setModel(proxyModel);
 
-    ui.tableView->setModel(&model);
-    ui.tableView->resizeColumnsToContents();
-   
-    ui.tableView->update();
-    ui.tableView->show();
+    // Сортируем по используемой памяти
+    ui.view_table->sortByColumn(1);
+    ui.view_table->show();
 }
 
 void SysInfoFront::DisplayProcInfo()
 {
+    if (netw_timer->isActive())
+        netw_timer->stop();
 
+    SendData("#2");
+
+    string json_data;
+    RecvData(json_data);
+    if (json_data.empty())
+        return;
+    json disks_info;
+    disks_info = json::parse(json_data);
+
+    model->setRowCount(0);
+    ui.view_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    model->setColumnCount(4);
+    ui.view_table->setShowGrid(true);
+    ui.view_table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    model->setHorizontalHeaderLabels(QStringList() << "Id" << "Name" << "Usage memory, Kb" << "Usage private memory, Kb");
+
+    int counter = 0;
+    for (auto disk : disks_info)
+    {
+        QList<QStandardItem*> row_items;
+        row_items.append(new QStandardItem(QString::fromStdString(disk["ID"])));
+        row_items.append(new QStandardItem(QString::fromStdString(disk["NAME"])));
+        row_items.append(new QStandardItem(QString::fromStdString(disk["USAGE_MEM"])));
+        row_items.append(new QStandardItem(QString::fromStdString(disk["PRIVATE MEM"])));
+        model->appendRow(row_items);
+    }
+    ui.view_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    ui.view_table->setSortingEnabled(true);
+
+    // Устанавливаем исходную модель таблицы
+    proxyModel->setSourceModel(model);
+
+    // Устанавливаем прокси-модель с переопределенной фильтрацией
+    ui.view_table->setModel(proxyModel);
+
+    // Сортируем по используемой памяти
+    ui.view_table->sortByColumn(2);
+    ui.view_table->show();
+
+    proc_timer->start(500);
 }
+
 
 void SysInfoFront::DisplayNetworkInfo()
 {
+    if (proc_timer->isActive())
+        proc_timer->stop();
+    SendData("#3");
 
+    string json_data;
+    RecvData(json_data);
+    if (json_data.empty())
+        return;
+    json disks_info;
+    disks_info = json::parse(json_data);
+
+    model->setRowCount(0);
+    ui.view_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    model->setColumnCount(6);
+    ui.view_table->setShowGrid(true);
+    ui.view_table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    model->setHorizontalHeaderLabels(QStringList() << "Interface" << "MTU" << "MAC" << "Status" << "Sent, Kb" << "Received, Kb");
+
+    int counter = 0;
+    for (auto disk : disks_info)
+    {
+        QList<QStandardItem*> row_items;
+        row_items.append(new QStandardItem(QString::fromStdString(disk["INTERFACE"])));
+        row_items.append(new QStandardItem(QString::fromStdString(disk["MTU"])));
+        row_items.append(new QStandardItem(QString::fromStdString(disk["MAC"])));
+        row_items.append(new QStandardItem(QString::fromStdString(disk["STATUS"])));
+        row_items.append(new QStandardItem(QString::fromStdString(disk["BYTES SENT"])));
+        row_items.append(new QStandardItem(QString::fromStdString(disk["BYTES RECV"])));
+        model->appendRow(row_items);
+    }
+    ui.view_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    ui.view_table->setSortingEnabled(true);
+
+    // Устанавливаем исходную модель таблицы
+    proxyModel->setSourceModel(model);
+
+    // Устанавливаем прокси-модель с переопределенной фильтрацией
+    ui.view_table->setModel(proxyModel);
+
+    // Сортируем по используемой памяти
+    ui.view_table->sortByColumn(1);
+    ui.view_table->show();
+
+    netw_timer->start(100);
 }
 
 void SysInfoFront::DisplayDeviceInfo()
 {
+    if (proc_timer->isActive())
+        proc_timer->stop();
+    if (netw_timer->isActive())
+        netw_timer->stop();
+    SendData("#4");
 
+    string json_data;
+    RecvData(json_data);
+    if (json_data.empty())
+        return;
+    json disks_info;
+    disks_info = json::parse(json_data);
+
+    model->setRowCount(0);
+    ui.view_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    model->setColumnCount(3);
+    ui.view_table->setShowGrid(true);
+    ui.view_table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    model->setHorizontalHeaderLabels(QStringList() << "Name" << "Vendor id" << "Product id");
+
+    int counter = 0;
+    for (auto disk : disks_info)
+    {
+        QList<QStandardItem*> row_items;
+        row_items.append(new QStandardItem(QString::fromStdString(disk["NAME"])));
+        row_items.append(new QStandardItem(QString::fromStdString(disk["VENDOR ID"])));
+        row_items.append(new QStandardItem(QString::fromStdString(disk["PRODUCT ID"])));
+        model->appendRow(row_items);
+    }
+    ui.view_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    ui.view_table->setSortingEnabled(true);
+
+    // Устанавливаем исходную модель таблицы
+    proxyModel->setSourceModel(model);
+
+    // Устанавливаем прокси-модель с переопределенной фильтрацией
+    ui.view_table->setModel(proxyModel);
+
+    // Сортируем по используемой памяти
+    ui.view_table->sortByColumn(0);
+    ui.view_table->show();
 }
 
 int SysInfoFront::OpenSocket()

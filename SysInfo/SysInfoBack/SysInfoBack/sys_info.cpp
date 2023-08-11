@@ -13,6 +13,12 @@ int SysInfo::run()
         RecvData(request);
         if (request == "#1")
             GetDiskInfo(info);
+        else if (request == "#2")
+            GetProcessList(info);
+        else if (request == "#3")
+            GetNetworkActivity(info);
+        else if (request == "#4")
+            GetDeviceInfo(info);
         else
             info = "Invalid request";
 
@@ -180,8 +186,8 @@ int SysInfo::GetDiskInfo(string& data)
             if (GetDiskFreeSpaceEx(drivePath.c_str(), &freeBytesAvailable, &totalBytes, &totalFreeBytes))
             {
                 string path(wstringToString(wstring(drivePath))),
-                    total_bytes(std::to_string(totalBytes.QuadPart)),
-                    free_bytes(std::to_string(freeBytesAvailable.QuadPart));
+                    total_bytes(std::to_string(totalBytes.QuadPart /1024 /1024)),
+                    free_bytes(std::to_string(freeBytesAvailable.QuadPart /1024 /1024));
 
                 json temp_json;
                 temp_json["DISK"] = path;
@@ -230,8 +236,8 @@ int SysInfo::GetProcessList(string& data)
                 GetProcessMemoryInfo(hProcess, (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc));
                 string proc_id(std::to_string(aProcesses[i])),
                     proc_name(wstringToString(wstring(szProcessName))),
-                    proc_mem(std::to_string(pmc.WorkingSetSize)),
-                    proc_pr_mem(std::to_string(pmc.PrivateUsage));
+                    proc_mem(std::to_string(pmc.WorkingSetSize/1024)),
+                    proc_pr_mem(std::to_string(pmc.PrivateUsage/1024));
 
                 json temp_json;
                 temp_json["ID"] = proc_id;
@@ -252,16 +258,38 @@ int SysInfo::GetProcessList(string& data)
 
 int SysInfo::GetNetworkActivity(string& data)
 {
-    ULONG ulOutBufLen = sizeof(MIB_IFTABLE);
-    MIB_IFTABLE* ifTable = static_cast<MIB_IFTABLE*>(malloc(ulOutBufLen));
-    if (ifTable == nullptr)
-    {
-        std::cerr << "Failed to allocate memory. Error: " << GetLastError() << std::endl;
-        return -1;
-    }
+    auto MacAddressToString = [](const BYTE* macAddr, DWORD macAddrLen) -> std::string {
+        char macStr[18]; // 17 символов для адреса + 1 символ для нуль-терминатора
+        sprintf(macStr, "%02X:%02X:%02X:%02X:%02X:%02X",
+            macAddr[0], macAddr[1], macAddr[2],
+            macAddr[3], macAddr[4], macAddr[5]);
+        return macStr;
+    };
+
+    auto InterfaceStatus = [](const DWORD status) -> std::string {
+        
+        if (status == IF_OPER_STATUS_NON_OPERATIONAL)
+            return "OPERATIONAL";
+        else if (status == IF_OPER_STATUS_UNREACHABLE)
+            return "UNREACHABLE";
+        else if (status == IF_OPER_STATUS_DISCONNECTED)
+            return "DISCONNECTED";
+        else if (status == IF_OPER_STATUS_CONNECTING)
+            return "CONNECTING";
+        else if (status == IF_OPER_STATUS_CONNECTED)
+            return "CONNECTED";
+        else
+            return "NONE";
+    };
+
+    ULONG ulOutBufLen = 0;
+    MIB_IFTABLE* ifTable = NULL;
 
     json na_json;
-    if (GetIfTable(ifTable, &ulOutBufLen, TRUE) == NO_ERROR)
+    DWORD result = GetIfTable(ifTable, &ulOutBufLen, FALSE);
+    ifTable = (MIB_IFTABLE*)malloc(ulOutBufLen);
+    result = GetIfTable(ifTable, &ulOutBufLen, TRUE);
+    if (result == NO_ERROR)
     {
         for (DWORD i = 0; i < ifTable->dwNumEntries; i++)
         {
@@ -270,15 +298,18 @@ int SysInfo::GetNetworkActivity(string& data)
             json temp_json;
 
 
-            temp_json["INTERFACE"] = std::to_string(ifRow.dwIndex);
-            temp_json["BYTES SENT"] = std::to_string(ifRow.dwOutOctets);
-            temp_json["BYTES RECV"] = std::to_string(ifRow.dwInOctets);
+            temp_json["INTERFACE"] = ConvertToMultibyte(ifRow.wszName);
+            temp_json["MTU"] = std::to_string(ifRow.dwMtu);
+            temp_json["MAC"] = MacAddressToString(ifRow.bPhysAddr, ifRow.dwPhysAddrLen);
+            temp_json["STATUS"] = InterfaceStatus(ifRow.dwOperStatus);
+            temp_json["BYTES SENT"] = std::to_string(ifRow.dwOutOctets/1024);
+            temp_json["BYTES RECV"] = std::to_string(ifRow.dwInOctets/1024);
 
             na_json.push_back(temp_json);
         }
     }
     else
-        std::cerr << "Failed to get network activity information." << std::endl;
+        std::cerr << "Failed to get network activity information. Error: " << GetLastError() << std::endl;
 
     free(ifTable);
 
@@ -301,28 +332,47 @@ int SysInfo::GetDeviceInfo(string& data)
     json device_json;
     for (DWORD i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &deviceInfoData); i++)
     {
-        TCHAR deviceName[200];
+        WCHAR deviceName[200];
+        ZeroMemory(&deviceName, 200);
         DWORD size = sizeof(deviceName) / sizeof(deviceName[0]);
 
-        if (SetupDiGetDeviceRegistryProperty(hDevInfo, &deviceInfoData, SPDRP_DEVICEDESC, NULL, (PBYTE)deviceName, size, NULL))
+        if (SetupDiGetDeviceRegistryPropertyW(hDevInfo, &deviceInfoData, SPDRP_DEVICEDESC, NULL, (PBYTE)deviceName, size, NULL))
         {
-            std::wcout << "Device Name: " << deviceName << std::endl;
-
             DEVPROPTYPE propType;
-            TCHAR vid[10], pid[10];
+            WCHAR vid[10], pid[10];
+            ZeroMemory(&vid, 10);
+            ZeroMemory(&pid, 10);
 
-            SetupDiGetDeviceRegistryProperty(hDevInfo, &deviceInfoData, SPDRP_HARDWAREID, NULL, (PBYTE)vid, sizeof(vid), NULL);
+            SetupDiGetDeviceRegistryPropertyW(hDevInfo, &deviceInfoData, SPDRP_HARDWAREID, NULL, (PBYTE)vid, sizeof(vid), NULL);
 
-            SetupDiGetDeviceRegistryProperty(hDevInfo, &deviceInfoData, SPDRP_COMPATIBLEIDS, NULL, (PBYTE)pid, sizeof(pid), NULL);
+            SetupDiGetDeviceRegistryPropertyW(hDevInfo, &deviceInfoData, SPDRP_COMPATIBLEIDS, NULL, (PBYTE)pid, sizeof(pid), NULL);
 
-            string name(wstringToString(deviceName)),
-                vendor(wstringToString(vid)),
-                product(wstringToString(pid));
+            string name = ConvertToMultibyte(deviceName),
+                vendor = ConvertToMultibyte(vid),
+                product = ConvertToMultibyte(pid);
+
+            if (vendor.empty())
+                vendor = "unknown";
+            if (product.empty())
+                product = "unknown";
 
             json temp_json;
-            temp_json["NAME"] = name;
-            temp_json["VENDOR ID"] = vendor;
-            temp_json["PRODUCT ID"] = product;
+            try
+            {
+                temp_json["NAME"] = name;
+                temp_json["VENDOR ID"] = vendor;
+                temp_json["PRODUCT ID"] = product;
+            }
+            catch (const std::exception &ex)
+            {
+                cout << "JSON throw exception!" << endl;
+                vendor = "unknown";
+                product = "unknown";
+
+                temp_json["NAME"] = name;
+                temp_json["VENDOR ID"] = vendor;
+                temp_json["PRODUCT ID"] = product;
+            }
 
             device_json.push_back(temp_json);
         }
@@ -330,13 +380,36 @@ int SysInfo::GetDeviceInfo(string& data)
 
     SetupDiDestroyDeviceInfoList(hDevInfo);
 
-    data = device_json.dump();
+    data = device_json.dump(0, ' ', true, nlohmann::json::error_handler_t::replace);
+    //data = device_json.dump();
     return 0;
 }
 
 
 string SysInfo::wstringToString(const wstring& wstr)
 {
-    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-    return converter.to_bytes(wstr);
+    std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> converter;
+    string str;
+
+    for (wchar_t wc : wstr) {
+        try {
+            str += converter.to_bytes(wc);
+        }
+        catch (const std::range_error& e) {
+            str += "?";
+        }
+    }
+    return str;
+}
+
+string SysInfo::ConvertToMultibyte(WCHAR* wstr)
+{
+    // Конвертируем WCHAR в wstring
+    std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> converter;
+    wstring wtemp(wstr);
+
+    // Конвертируем wstring в string
+    string str = converter.to_bytes(wtemp);
+
+    return str;
 }

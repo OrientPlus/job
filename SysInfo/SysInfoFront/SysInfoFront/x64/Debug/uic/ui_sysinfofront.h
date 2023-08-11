@@ -26,11 +26,11 @@ class Ui_SysInfoFrontClass
 {
 public:
     QWidget *centralWidget;
-    QTableView *tableView;
     QPushButton *device_button;
     QPushButton *netw_button;
-    QPushButton *proc_button;
     QPushButton *disk_button;
+    QPushButton *proc_button;
+    QTableView *view_table;
     QMenuBar *menuBar;
     QToolBar *mainToolBar;
     QStatusBar *statusBar;
@@ -39,28 +39,28 @@ public:
     {
         if (SysInfoFrontClass->objectName().isEmpty())
             SysInfoFrontClass->setObjectName(QString::fromUtf8("SysInfoFrontClass"));
-        SysInfoFrontClass->resize(952, 501);
+        SysInfoFrontClass->resize(1082, 463);
         centralWidget = new QWidget(SysInfoFrontClass);
         centralWidget->setObjectName(QString::fromUtf8("centralWidget"));
-        tableView = new QTableView(centralWidget);
-        tableView->setObjectName(QString::fromUtf8("tableView"));
-        tableView->setGeometry(QRect(110, 0, 831, 431));
         device_button = new QPushButton(centralWidget);
         device_button->setObjectName(QString::fromUtf8("device_button"));
-        device_button->setGeometry(QRect(10, 330, 91, 101));
+        device_button->setGeometry(QRect(10, 250, 101, 71));
         netw_button = new QPushButton(centralWidget);
         netw_button->setObjectName(QString::fromUtf8("netw_button"));
-        netw_button->setGeometry(QRect(10, 220, 91, 101));
-        proc_button = new QPushButton(centralWidget);
-        proc_button->setObjectName(QString::fromUtf8("proc_button"));
-        proc_button->setGeometry(QRect(10, 0, 91, 101));
+        netw_button->setGeometry(QRect(10, 170, 101, 71));
         disk_button = new QPushButton(centralWidget);
         disk_button->setObjectName(QString::fromUtf8("disk_button"));
-        disk_button->setGeometry(QRect(10, 110, 91, 101));
+        disk_button->setGeometry(QRect(10, 90, 101, 71));
+        proc_button = new QPushButton(centralWidget);
+        proc_button->setObjectName(QString::fromUtf8("proc_button"));
+        proc_button->setGeometry(QRect(10, 10, 101, 71));
+        view_table = new QTableView(centralWidget);
+        view_table->setObjectName(QString::fromUtf8("view_table"));
+        view_table->setGeometry(QRect(120, 10, 951, 381));
         SysInfoFrontClass->setCentralWidget(centralWidget);
         menuBar = new QMenuBar(SysInfoFrontClass);
         menuBar->setObjectName(QString::fromUtf8("menuBar"));
-        menuBar->setGeometry(QRect(0, 0, 952, 26));
+        menuBar->setGeometry(QRect(0, 0, 1082, 26));
         SysInfoFrontClass->setMenuBar(menuBar);
         mainToolBar = new QToolBar(SysInfoFrontClass);
         mainToolBar->setObjectName(QString::fromUtf8("mainToolBar"));
@@ -79,8 +79,8 @@ public:
         SysInfoFrontClass->setWindowTitle(QCoreApplication::translate("SysInfoFrontClass", "SysInfoFront", nullptr));
         device_button->setText(QCoreApplication::translate("SysInfoFrontClass", "Devices", nullptr));
         netw_button->setText(QCoreApplication::translate("SysInfoFrontClass", "Network", nullptr));
-        proc_button->setText(QCoreApplication::translate("SysInfoFrontClass", "Processes", nullptr));
         disk_button->setText(QCoreApplication::translate("SysInfoFrontClass", "Disks", nullptr));
+        proc_button->setText(QCoreApplication::translate("SysInfoFrontClass", "Processes", nullptr));
     } // retranslateUi
 
 };
