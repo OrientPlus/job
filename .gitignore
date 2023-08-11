@@ -65,8 +65,8 @@ dkms.conf
 *.ipdb
 *.iobj
 *.json
-*.vcxproj.*
-*.vcxproj
+#*.vcxproj.*
+#*.vcxproj
 *.vsidx
 *.lock
 *.bin
@@ -76,3 +76,4 @@ dkms.conf
 *.res
 *.idx
 *.natvis
+SysInfo/SysInnfoFront/SysInfoFront/

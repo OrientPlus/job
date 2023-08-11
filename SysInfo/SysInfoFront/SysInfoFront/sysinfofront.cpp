@@ -3,6 +3,7 @@
 SysInfoFront::SysInfoFront(QWidget *parent)
     : QMainWindow(parent)
 {
+    //system("SysInfoBack.exe");
     proc_timer = new QTimer;
     netw_timer = new QTimer;
     OpenSocket();
