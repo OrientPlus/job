@@ -3,169 +3,18 @@
 
 int SysInfo::run()
 {
-    OpenSocket();
+    //-------------------gRPC---------------
+    std::string server_address("127.0.0.1:8080");
 
-    string proc_list, device_info, disk_info, netw_act;
-    string temp;
-    while (true)
-    {
-        string request, info;
-        RecvData(request);
-        if (request == "#1")
-            GetDiskInfo(info);
-        else if (request == "#2")
-            GetProcessList(info);
-        else if (request == "#3")
-            GetNetworkActivity(info);
-        else if (request == "#4")
-            GetDeviceInfo(info);
-        else
-            info = "Invalid request";
+    grpc::ServerBuilder builder;
+    builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+    builder.RegisterService(this);
 
-        SendData(info);
-    }
-
-    CloseSocket();
+    std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
+    std::cout << "Server listening on " << server_address << std::endl;
+    server->Wait();
     return 0;
 }
-
-int SysInfo::OpenSocket()
-{
-    if (WSAStartup(MAKEWORD(2, 2), &wsa_data_) != 0)
-    {
-        cerr << "Не удалось инициализировать Winsock. Error: " << GetLastError() << std::endl;
-        return INVALID_SOCKET;
-    }
-
-    socket_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (socket_ == INVALID_SOCKET)
-    {
-        cerr << "Не удалось создать сокет. Error: " << GetLastError() << endl;
-        WSACleanup();
-        return INVALID_SOCKET;
-    }
-
-    addr_.sin_family = AF_INET;
-    addr_.sin_port = htons(DEFAULT_PORT);
-    addr_.sin_addr.s_addr = inet_addr(DEFAULT_IP);
-
-    if (bind(socket_, (struct sockaddr*)&addr_, sizeof(addr_)) == SOCKET_ERROR)
-    {
-        std::cerr << "Не удалось связать сокет с адресом сервера.\nError: " << GetLastError() << std::endl;
-        CloseSocket();
-        return INVALID_SOCKET;
-    }
-
-
-    return 0;
-}
-
-int SysInfo::CloseSocket()
-{
-    closesocket(socket_);
-    WSACleanup();
-
-    cout << "Socket closed" << endl;
-    return 0;
-}
-
-int SysInfo::SendData(string data)
-{
-    int total_bytes_send = 0, bytes_to_sent, bytes_sent;
-
-    // Отправляем размер данных
-    bytes_to_sent = htonl(data.size());
-    sendto(socket_, reinterpret_cast<char*>(&bytes_to_sent), sizeof(int), 0, (struct sockaddr*)&gui_addr_, sizeof(gui_addr_));
-
-    // Отправляем данные блоками
-    while (total_bytes_send < data.size())
-    {
-        bytes_to_sent = min(data.size() - total_bytes_send, BUFFER_SIZE);
-        bytes_sent = sendto(socket_, data.data() + total_bytes_send, bytes_to_sent, 0, (struct sockaddr*)&gui_addr_, sizeof(gui_addr_));
-
-        if (bytes_sent == SOCKET_ERROR)
-        {
-            cerr << "Ошибка отправки данных. Error: " << GetLastError() << endl;
-            return -1;
-        }
-
-        total_bytes_send += bytes_sent;
-    }
-    // Отправляем контрольную сумму
-    unsigned checksum = GetCRC32(data);
-    checksum = htonl(checksum);
-    bytes_sent = sendto(socket_, reinterpret_cast<char*>(&checksum), sizeof(checksum), 0, (struct sockaddr*)&gui_addr_, sizeof(gui_addr_));
-    if (bytes_sent == SOCKET_ERROR)
-    {
-        cerr << "Ошибка отправки данных.\nError: " << GetLastError() << endl;
-        return -1;
-    }
-
-    return total_bytes_send;
-}
-
-int SysInfo::RecvData(string& data)
-{
-    int client_addr_size = sizeof(gui_addr_), expected_size = 0, bytes_read = 0;
-    char local_buffer[BUFFER_SIZE + 1];
-    int bytes_to_receive, total_bytes_received = 0;
-
-    // Getting the size of the data
-    bytes_read = recvfrom(socket_, reinterpret_cast<char*>(&expected_size), sizeof(expected_size), 0, (struct sockaddr*)&gui_addr_, &client_addr_size);
-    if (bytes_read == SOCKET_ERROR)
-    {
-        cerr << "Ошибка приема данных.\nError: " << GetLastError() << endl;
-        return -1;
-    }
-    bytes_read = 0;
-    expected_size = ntohl(expected_size);
-
-    // Getting data in blocks
-    while (total_bytes_received < expected_size)
-    {
-        bytes_to_receive = min(expected_size - total_bytes_received, BUFFER_SIZE);
-        bytes_read = recvfrom(socket_, local_buffer, bytes_to_receive, 0, (struct sockaddr*)&gui_addr_, &client_addr_size);
-        if (bytes_read == SOCKET_ERROR)
-        {
-            cerr << "Ошибка приема данных.\nError: " << GetLastError() << endl;
-            return -1;
-        }
-        total_bytes_received += bytes_read;
-
-        local_buffer[bytes_read] = '\0';
-        data += string{ local_buffer };
-    }
-
-    // Getting the checksum of the data
-    unsigned checksum;
-    bytes_read = recvfrom(socket_, reinterpret_cast<char*>(&checksum), sizeof(checksum), 0, (struct sockaddr*)&gui_addr_, &client_addr_size);
-    if (bytes_read == SOCKET_ERROR)
-    {
-        cerr << "Ошибка приема данных.\nError: " << GetLastError() << endl;
-        return -1;
-    }
-    checksum = ntohl(checksum);
-
-    // Check that the checksum matches
-    unsigned calculated_checksum = GetCRC32(data);
-    if (calculated_checksum != checksum)
-    {
-        cout << "The checksum does not match!" << endl;
-        return -1;
-    }
-
-    return 0;
-}
-
-unsigned SysInfo::GetCRC32(string data)
-{
-    unsigned int crc = crc32(0L, Z_NULL, 0);
-
-    crc = crc32(crc, reinterpret_cast<const Bytef*>(data.c_str()), data.length());
-
-    return crc;
-}
-
 
 
 //-------------------------------------------------
@@ -384,6 +233,46 @@ int SysInfo::GetDeviceInfo(string& data)
     //data = device_json.dump();
     return 0;
 }
+
+//------------------------------------------------
+//                 Методы gRPC
+//
+grpc::Status SysInfo::ProcessList(grpc::ServerContext* context, const google::protobuf::Empty* request, channel::Response* response)
+{
+    string answer_str;
+    GetProcessList(answer_str);
+
+    response->set_result(answer_str);
+    return grpc::Status();
+}
+
+grpc::Status SysInfo::DiskInfo(grpc::ServerContext* context, const google::protobuf::Empty* request, channel::Response* response)
+{
+    string answer_str;
+    GetDiskInfo(answer_str);
+
+    response->set_result(answer_str);
+    return grpc::Status();
+}
+
+grpc::Status SysInfo::NetworkActivity(grpc::ServerContext* context, const google::protobuf::Empty* request, channel::Response* response)
+{
+    string answer_str;
+    GetNetworkActivity(answer_str);
+
+    response->set_result(answer_str);
+    return grpc::Status();
+}
+
+grpc::Status SysInfo::DeviceInfo(grpc::ServerContext* context, const google::protobuf::Empty* request, channel::Response* response)
+{
+    string answer_str;
+    GetDeviceInfo(answer_str);
+
+    response->set_result(answer_str);
+    return grpc::Status();
+}
+
 
 
 string SysInfo::wstringToString(const wstring& wstr)

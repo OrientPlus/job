@@ -12,21 +12,20 @@
 #include <winsock2.h>
 #pragma comment(lib, "ws2_32.lib")
 #pragma warning(disable:4996)
+
 #include <Windows.h>
 #include <Psapi.h>
 #pragma comment(lib, "Psapi.lib")
+
 #include <Iphlpapi.h>
 #pragma comment(lib, "Iphlpapi.lib")
+
 #include <Setupapi.h>
 #pragma comment(lib, "Setupapi.lib")
 
-#include "zlib.h"
 #include <nlohmann/json.hpp>
-
-#define DEFAULT_PORT 8888
-#define DEFAULT_IP "127.0.0.1"
-#define BUFFER_SIZE 512
-
+#include <grpcpp/grpcpp.h>
+#include "channel.grpc.pb.h"
 
 
 using std::string;
@@ -37,24 +36,13 @@ using std::cerr;
 using std::endl;
 using nlohmann::json;
 
-// - Процессы
-// - Занятое место на дисках
-// - Сетевая активность
-// - Информация об устройствах
-// - 
 
-
-class SysInfo
+class SysInfo final : public channel::ChannelService::Service
 {
 public:
 	int run();
+
 private:
-	// Служебные методы обеспечивающие взаимодействия с GUI
-	int OpenSocket();
-	int CloseSocket();
-	int SendData(string data);
-	int RecvData(string& data);
-	unsigned GetCRC32(string data);
 	string wstringToString(const wstring& wstr);
 	string ConvertToMultibyte(WCHAR* array);
 
@@ -65,8 +53,8 @@ private:
 	int GetNetworkActivity(string& data);
 	int GetDeviceInfo(string& data);
 
-
-	sockaddr_in addr_, gui_addr_;
-	WSADATA wsa_data_;
-	SOCKET socket_;
+	grpc::Status ProcessList(grpc::ServerContext* context, const google::protobuf::Empty* request, channel::Response* response) override;
+	grpc::Status DiskInfo(grpc::ServerContext* context, const google::protobuf::Empty* request, channel::Response* response) override;
+	grpc::Status NetworkActivity(grpc::ServerContext* context, const google::protobuf::Empty* request, channel::Response* response) override;
+	grpc::Status DeviceInfo(grpc::ServerContext* context, const google::protobuf::Empty* request, channel::Response* response) override;
 };

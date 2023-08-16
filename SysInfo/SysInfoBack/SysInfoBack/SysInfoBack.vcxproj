@@ -110,10 +110,10 @@
       <AdditionalIncludeDirectories>C:\VCPKG\vcpkg-master\installed\x64-windows\include</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <SubSystem>Windows</SubSystem>
+      <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>C:\VCPKG\vcpkg-master\installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
       <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
     </Link>
   </ItemDefinitionGroup>
@@ -134,10 +134,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="channel.grpc.pb.cc" />
+    <ClCompile Include="channel.pb.cc" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="sys_info.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="channel.grpc.pb.h" />
+    <ClInclude Include="channel.pb.h" />
     <ClInclude Include="sys_info.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
