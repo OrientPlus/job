@@ -1,0 +1,15 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+
+package channel;
+
+service ChannelService {
+  rpc ProcessList(google.protobuf.Empty) returns (Response);
+  rpc DiskInfo(google.protobuf.Empty) returns (Response);
+  rpc NetworkActivity(google.protobuf.Empty) returns (Response);
+  rpc DeviceInfo(google.protobuf.Empty) returns (Response);
+}
+
+message Response {
+  string result = 1;
+}
