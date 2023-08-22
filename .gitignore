@@ -76,3 +76,5 @@ dkms.conf
 *.res
 *.idx
 *.natvis
+ubuntu-22.04.3-desktop-amd64.iso
+GI_Ubuntu/Ubuntu 64-bit.ova

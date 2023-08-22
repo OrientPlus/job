@@ -46,20 +46,20 @@ using nlohmann::json;
 class NumericSortProxyModel : public QSortFilterProxyModel {
 public:
     bool lessThan(const QModelIndex& left, const QModelIndex& right) const override {
-        QVariant leftData = sourceModel()->data(left);
-        QVariant rightData = sourceModel()->data(right);
+        QVariant left_data = sourceModel()->data(left);
+        QVariant right_data = sourceModel()->data(right);
 
         // Проверяем, что данные можно преобразовать в числа
         bool ok1, ok2;
-        int leftNumber = leftData.toInt(&ok1);
-        int rightNumber = rightData.toInt(&ok2);
+        int left_number = left_data.toInt(&ok1);
+        int right_number = right_data.toInt(&ok2);
 
         if (ok1 && ok2) {
-            return leftNumber < rightNumber;
+            return left_number < right_number;
         }
 
         // В случае, если не удалось преобразовать в числа, выполняем сравнение строк
-        return QString::localeAwareCompare(leftData.toString(), rightData.toString()) < 0;
+        return QString::localeAwareCompare(left_data.toString(), right_data.toString()) < 0;
     }
 };
 
